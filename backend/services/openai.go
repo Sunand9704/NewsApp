@@ -149,32 +149,58 @@ func (s *OpenAIService) ExtractFacts(ctx context.Context, text string, language 
 		"You are a strict fact extraction engine. Return only facts explicitly present in the input. No hallucination. Output language must be %s.",
 		language,
 	)
-	userPrompt := prompts.BuildFactsPrompt(clean) + languageConstraint(language)
+	currentInput := clean
+	var lastErr error
 
-	rawJSON, err := s.callJSONCompletion(ctx, "extract-facts", systemPrompt, userPrompt, 0.1, 700)
-	if err != nil {
-		return nil, err
+	for attempt := 1; attempt <= 4; attempt++ {
+		userPrompt := prompts.BuildFactsPrompt(currentInput) + languageConstraint(language)
+		rawJSON, err := s.callJSONCompletion(ctx, "extract-facts", systemPrompt, userPrompt, 0.1, 700)
+		if err == nil {
+			var out factsOutput
+			if err := json.Unmarshal([]byte(rawJSON), &out); err != nil {
+				return nil, fmt.Errorf("parse facts response: %w", err)
+			}
+
+			facts := out.Facts
+			if len(facts) == 0 {
+				facts = parseFirstStringArrayField(rawJSON, "facts")
+			}
+
+			deduped := dedupeAndTrim(facts)
+			if len(deduped) == 0 {
+				return nil, errors.New("groq returned empty facts")
+			}
+
+			return deduped, nil
+		}
+
+		if !isRequestTooLargeError(err) {
+			return nil, err
+		}
+
+		lastErr = err
+		shorterInput := shrinkPromptInput(currentInput)
+		if shorterInput == currentInput {
+			return nil, err
+		}
+
+		log.Printf(
+			"[groq][extract-facts] request too large, retrying with shorter input (attempt=%d runes_before=%d runes_after=%d)",
+			attempt,
+			len([]rune(currentInput)),
+			len([]rune(shorterInput)),
+		)
+		currentInput = shorterInput
 	}
 
-	var out factsOutput
-	if err := json.Unmarshal([]byte(rawJSON), &out); err != nil {
-		return nil, fmt.Errorf("parse facts response: %w", err)
+	if lastErr != nil {
+		return nil, lastErr
 	}
 
-	facts := out.Facts
-	if len(facts) == 0 {
-		facts = parseFirstStringArrayField(rawJSON, "facts")
-	}
-
-	deduped := dedupeAndTrim(facts)
-	if len(deduped) == 0 {
-		return nil, errors.New("groq returned empty facts")
-	}
-
-	return deduped, nil
+	return nil, errors.New("extract facts failed after retries")
 }
 
-func (s *OpenAIService) GenerateGapQuestions(ctx context.Context, text string, facts []string, language string) ([]string, error) {
+func (s *OpenAIService) GenerateGapQuestions(ctx context.Context, facts []string, language string) ([]string, error) {
 	if s.apiKey == "" {
 		return nil, errors.New("GROQ_API_KEY (or OPENAI_API_KEY) is missing")
 	}
@@ -183,7 +209,7 @@ func (s *OpenAIService) GenerateGapQuestions(ctx context.Context, text string, f
 	}
 
 	joinedFacts := strings.Join(facts, "\n- ")
-	userPrompt := prompts.BuildGapsPrompt(fmt.Sprintf("Text:\n%s\n\nFacts:\n- %s", text, joinedFacts)) + languageConstraint(language)
+	userPrompt := prompts.BuildGapsPrompt(fmt.Sprintf("Facts:\n- %s", joinedFacts)) + languageConstraint(language)
 	systemPrompt := fmt.Sprintf(
 		"You identify missing verification context. Return practical unanswered questions only. Output language must be %s.",
 		language,
@@ -696,6 +722,49 @@ func firstNonEmptyEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func isRequestTooLargeError(err error) bool {
+	var apiErr *apiRequestError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+
+	return isRequestTooLargeMessage(apiErr.Message)
+}
+
+func isRequestTooLargeMessage(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if lower == "" {
+		return false
+	}
+
+	return strings.Contains(lower, "request too large") ||
+		strings.Contains(lower, "reduce your message size") ||
+		(strings.Contains(lower, "tokens per minute") && strings.Contains(lower, "requested")) ||
+		strings.Contains(lower, "context length")
+}
+
+func shrinkPromptInput(text string) string {
+	const minRunes = 900
+
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) <= minRunes {
+		return strings.TrimSpace(text)
+	}
+
+	nextLen := int(float64(len(runes)) * 0.72)
+	if nextLen < minRunes {
+		nextLen = minRunes
+	}
+	if nextLen >= len(runes) {
+		nextLen = len(runes) - 1
+	}
+	if nextLen <= 0 {
+		return strings.TrimSpace(text)
+	}
+
+	return strings.TrimSpace(string(runes[:nextLen]))
 }
 
 func shouldRetryWithoutJSONMode(message string) bool {

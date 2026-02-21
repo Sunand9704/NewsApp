@@ -45,14 +45,14 @@ func (s *FactService) RunPhaseOne(ctx context.Context, input models.PhaseOneInpu
 
 	outputLanguage := normalizeOutputLanguage(input.Language, rawText)
 	generationLanguage := stableGenerationLanguage(outputLanguage)
-	llmInput := compactLLMInput(rawText)
+	factsInput := compactLLMInput(rawText)
 
-	facts, err := s.ai.ExtractFacts(ctx, llmInput, generationLanguage)
+	facts, err := s.ai.ExtractFacts(ctx, factsInput, generationLanguage)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
 
-	gaps, err := s.ai.GenerateGapQuestions(ctx, llmInput, facts, generationLanguage)
+	gaps, err := s.ai.GenerateGapQuestions(ctx, facts, generationLanguage)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
@@ -374,13 +374,28 @@ func compactLLMInput(raw string) string {
 		return clean
 	}
 
-	const maxRunes = 12000
-	runes := []rune(clean)
-	if len(runes) <= maxRunes {
-		return clean
+	maxRunes := safeRunesForExtraction(clean)
+	return truncateRunes(clean, maxRunes)
+}
+
+func safeRunesForExtraction(value string) int {
+	if containsTeluguScript(value) {
+		return 3200
+	}
+	return 6200
+}
+
+func truncateRunes(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
 	}
 
-	return string(runes[:maxRunes])
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= maxRunes {
+		return strings.TrimSpace(value)
+	}
+
+	return strings.TrimSpace(string(runes[:maxRunes]))
 }
 
 func (s *FactService) applyRuntimeAISettings(ctx context.Context) error {
