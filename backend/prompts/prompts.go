@@ -50,6 +50,44 @@ Facts:
 Gaps:
 %s`
 
+const headlinesPromptTemplate = `Generate headline options for a news analysis.
+
+Rules:
+- Return 3 to 5 distinct headlines.
+- Keep each headline concise (max 12 words).
+- Focus on strongest verified facts.
+- Avoid clickbait and avoid questions.
+- Do not invent claims.
+
+Return strict JSON:
+{"headlines":["headline 1","headline 2"]}
+
+Facts:
+%s
+
+Article:
+%s`
+
+const straplinesPromptTemplate = `Generate strapline options for a news analysis.
+
+Rules:
+- Return 2 to 4 distinct straplines.
+- Each strapline should complement a headline (max 14 words).
+- Keep tone factual and editorial.
+- Do not invent claims.
+
+Return strict JSON:
+{"straplines":["strapline 1","strapline 2"]}
+
+Facts:
+%s
+
+Open gaps:
+%s
+
+Article:
+%s`
+
 func BuildFactsPrompt(text string) string {
 	return fmt.Sprintf(factsPromptTemplate, text)
 }
@@ -60,4 +98,12 @@ func BuildGapsPrompt(facts string) string {
 
 func BuildArticlePrompt(facts string, gaps string) string {
 	return fmt.Sprintf(articlePromptTemplate, facts, gaps)
+}
+
+func BuildHeadlinesPrompt(facts string, article string) string {
+	return fmt.Sprintf(headlinesPromptTemplate, facts, article)
+}
+
+func BuildStraplinesPrompt(facts string, gaps string, article string) string {
+	return fmt.Sprintf(straplinesPromptTemplate, facts, gaps, article)
 }

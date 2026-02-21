@@ -11,7 +11,7 @@ import {
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "New Analysis", url: "/new-analysis", icon: FilePlus2 },
-  { title: "Saved Analyses", url: "/saved", icon: Archive },
+  { title: "Draft Articles", url: "/draft-articles", icon: Archive },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

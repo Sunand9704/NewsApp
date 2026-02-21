@@ -29,8 +29,15 @@ type updateGapRequest struct {
 }
 
 type updateAnalysisRequest struct {
-	Status   *string `json:"status"`
-	Category *string `json:"category"`
+	Status            *string `json:"status"`
+	Category          *string `json:"category"`
+	SelectedFormat    *string `json:"selectedFormat"`
+	ArticleText       *string `json:"articleText"`
+	HeadlineSelected  *string `json:"headlineSelected"`
+	StraplineSelected *string `json:"straplineSelected"`
+	Slug              *string `json:"slug"`
+	MetaDescription   *string `json:"metaDescription"`
+	Excerpt           *string `json:"excerpt"`
 }
 
 type addFactRequest struct {
@@ -130,6 +137,20 @@ func (a *AdminController) UpdateFact(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (a *AdminController) DeleteFact(c *gin.Context) {
+	factID, ok := parsePathID(c, "id")
+	if !ok {
+		return
+	}
+
+	if err := a.adminService.DeleteFact(c.Request.Context(), factID); err != nil {
+		respondWithError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (a *AdminController) UpdateGap(c *gin.Context) {
 	gapID, ok := parsePathID(c, "id")
 	if !ok {
@@ -162,7 +183,19 @@ func (a *AdminController) UpdateAnalysis(c *gin.Context) {
 		return
 	}
 
-	if err := a.adminService.UpdateAnalysis(c.Request.Context(), articleID, req.Status, req.Category); err != nil {
+	if err := a.adminService.UpdateAnalysis(
+		c.Request.Context(),
+		articleID,
+		req.Status,
+		req.Category,
+		req.SelectedFormat,
+		req.ArticleText,
+		req.HeadlineSelected,
+		req.StraplineSelected,
+		req.Slug,
+		req.MetaDescription,
+		req.Excerpt,
+	); err != nil {
 		respondWithError(c, err)
 		return
 	}

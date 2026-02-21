@@ -67,6 +67,14 @@ type articleOutput struct {
 	Article string `json:"article"`
 }
 
+type headlinesOutput struct {
+	Headlines []string `json:"headlines"`
+}
+
+type straplinesOutput struct {
+	Straplines []string `json:"straplines"`
+}
+
 type apiRequestError struct {
 	StatusCode int
 	Message    string
@@ -277,6 +285,102 @@ func (s *OpenAIService) GenerateStructuredArticle(ctx context.Context, facts []s
 	}
 
 	return article, nil
+}
+
+func (s *OpenAIService) GenerateHeadlineOptions(
+	ctx context.Context,
+	facts []string,
+	article string,
+	language string,
+) ([]string, error) {
+	if s.apiKey == "" {
+		return nil, errors.New("GROQ_API_KEY (or OPENAI_API_KEY) is missing")
+	}
+
+	factsBlock := "- " + strings.Join(dedupeAndTrim(facts), "\n- ")
+	articleBlock := truncateForPrompt(article, 900)
+	if strings.TrimSpace(factsBlock) == "-" {
+		return nil, errors.New("facts are required to generate headlines")
+	}
+
+	systemPrompt := fmt.Sprintf(
+		"You generate editorial headlines from verified facts only. Output language must be %s.",
+		language,
+	)
+	userPrompt := prompts.BuildHeadlinesPrompt(factsBlock, articleBlock) + languageConstraint(language)
+
+	rawJSON, err := s.callJSONCompletion(ctx, "generate-headlines", systemPrompt, userPrompt, 0.35, 700)
+	if err != nil {
+		return nil, err
+	}
+
+	var out headlinesOutput
+	if err := json.Unmarshal([]byte(rawJSON), &out); err != nil {
+		return nil, fmt.Errorf("parse headlines response: %w", err)
+	}
+
+	headlines := out.Headlines
+	if len(headlines) == 0 {
+		headlines = parseFirstStringArrayField(rawJSON, "headlines")
+	}
+
+	deduped := dedupeAndTrim(headlines)
+	if len(deduped) == 0 {
+		return nil, errors.New("groq returned empty headlines")
+	}
+
+	return limitListItems(deduped, 5), nil
+}
+
+func (s *OpenAIService) GenerateStraplineOptions(
+	ctx context.Context,
+	facts []string,
+	gaps []string,
+	article string,
+	language string,
+) ([]string, error) {
+	if s.apiKey == "" {
+		return nil, errors.New("GROQ_API_KEY (or OPENAI_API_KEY) is missing")
+	}
+
+	factsBlock := "- " + strings.Join(dedupeAndTrim(facts), "\n- ")
+	gapsBlock := "- " + strings.Join(dedupeAndTrim(gaps), "\n- ")
+	articleBlock := truncateForPrompt(article, 900)
+
+	if strings.TrimSpace(factsBlock) == "-" {
+		return nil, errors.New("facts are required to generate straplines")
+	}
+	if strings.TrimSpace(gapsBlock) == "-" {
+		gapsBlock = "- None"
+	}
+
+	systemPrompt := fmt.Sprintf(
+		"You generate concise editorial straplines from verified facts. Output language must be %s.",
+		language,
+	)
+	userPrompt := prompts.BuildStraplinesPrompt(factsBlock, gapsBlock, articleBlock) + languageConstraint(language)
+
+	rawJSON, err := s.callJSONCompletion(ctx, "generate-straplines", systemPrompt, userPrompt, 0.35, 700)
+	if err != nil {
+		return nil, err
+	}
+
+	var out straplinesOutput
+	if err := json.Unmarshal([]byte(rawJSON), &out); err != nil {
+		return nil, fmt.Errorf("parse straplines response: %w", err)
+	}
+
+	straplines := out.Straplines
+	if len(straplines) == 0 {
+		straplines = parseFirstStringArrayField(rawJSON, "straplines")
+	}
+
+	deduped := dedupeAndTrim(straplines)
+	if len(deduped) == 0 {
+		return nil, errors.New("groq returned empty straplines")
+	}
+
+	return limitListItems(deduped, 4), nil
 }
 
 func (s *OpenAIService) TranslateList(ctx context.Context, items []string, language string) ([]string, error) {
@@ -515,6 +619,26 @@ func dedupeAndTrim(values []string) []string {
 	}
 
 	return result
+}
+
+func limitListItems(values []string, max int) []string {
+	if max <= 0 || len(values) <= max {
+		return values
+	}
+	return values[:max]
+}
+
+func truncateForPrompt(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+
+	clean := strings.TrimSpace(value)
+	runes := []rune(clean)
+	if len(runes) <= maxRunes {
+		return clean
+	}
+	return strings.TrimSpace(string(runes[:maxRunes]))
 }
 
 func parseFirstStringArrayField(rawJSON string, preferredKey string) []string {
