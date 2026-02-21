@@ -1,4 +1,4 @@
-const localhost = "http://localhost:8085/api";
+const localhost = "https://newsapp-backend-42q6.onrender.com/api";
 
 export interface AnalyseResponse {
   articleId: number;
