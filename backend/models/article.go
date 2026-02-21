@@ -14,6 +14,7 @@ type PhaseOneInput struct {
 	Text     string `json:"text,omitempty"`
 	URL      string `json:"url,omitempty"`
 	Language string `json:"language,omitempty"`
+	Category string `json:"category,omitempty"`
 }
 
 type PhaseOneResponse struct {

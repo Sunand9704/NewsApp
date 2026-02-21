@@ -26,19 +26,22 @@ export function AppSidebar() {
           <Newspaper className="h-4 w-4 text-primary-foreground" />
         </div>
         <span className="text-base font-semibold text-foreground tracking-tight">
-          NanoHeads
+          Admin Access
         </span>
       </div>
 
       {/* Navigation */}
       <nav className="flex flex-1 flex-col gap-1 px-3 pt-2">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.url;
+          const isActive =
+            item.url === "/"
+              ? location.pathname === "/"
+              : location.pathname.startsWith(item.url);
           return (
             <NavLink
               key={item.title}
               to={item.url}
-              end
+              end={item.url === "/"}
               className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-secondary text-foreground"
@@ -55,7 +58,7 @@ export function AppSidebar() {
 
       {/* Footer */}
       <div className="border-t border-border px-5 py-4">
-        <p className="text-xs text-muted-foreground">NanoHeads v1.0</p>
+        <p className="text-xs text-muted-foreground"></p>
         <p className="text-xs text-muted-foreground">AI Editorial Dashboard</p>
       </div>
     </aside>

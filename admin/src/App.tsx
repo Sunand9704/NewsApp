@@ -21,6 +21,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/new-analysis" element={<NewAnalysis />} />
           <Route path="/saved" element={<SavedAnalyses />} />
+          <Route path="/saved/:analysisId" element={<SavedAnalyses />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

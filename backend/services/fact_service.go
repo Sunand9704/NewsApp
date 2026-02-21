@@ -34,6 +34,10 @@ func (s *FactService) RunPhaseOne(ctx context.Context, input models.PhaseOneInpu
 		return models.PhaseOneResponse{}, errors.New("database is not initialized")
 	}
 
+	if err := s.applyRuntimeAISettings(ctx); err != nil {
+		return models.PhaseOneResponse{}, err
+	}
+
 	rawText, sourceURL, err := s.resolveInput(ctx, input)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
@@ -56,7 +60,7 @@ func (s *FactService) RunPhaseOne(ctx context.Context, input models.PhaseOneInpu
 		return models.PhaseOneResponse{}, err
 	}
 
-	articleID, err := s.savePhaseOne(ctx, sourceURL, rawText, articleText, facts, gaps)
+	articleID, err := s.savePhaseOne(ctx, sourceURL, rawText, articleText, input.Category, facts, gaps)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
@@ -128,6 +132,7 @@ func (s *FactService) savePhaseOne(
 	sourceURL string,
 	rawText string,
 	articleText string,
+	category string,
 	facts []string,
 	gaps []string,
 ) (int64, error) {
@@ -144,7 +149,12 @@ func (s *FactService) savePhaseOne(
 		}
 	}()
 
-	articleID, err := insertArticle(ctx, tx, driver, sourceURL, rawText, articleText)
+	topicID, err := resolveTopicID(ctx, tx, driver, category)
+	if err != nil {
+		return 0, err
+	}
+
+	articleID, err := insertArticle(ctx, tx, driver, sourceURL, rawText, articleText, topicID)
 	if err != nil {
 		return 0, err
 	}
@@ -165,18 +175,26 @@ func (s *FactService) savePhaseOne(
 	return articleID, nil
 }
 
-func insertArticle(ctx context.Context, tx *sql.Tx, driver string, sourceURL string, rawText string, articleText string) (int64, error) {
+func insertArticle(
+	ctx context.Context,
+	tx *sql.Tx,
+	driver string,
+	sourceURL string,
+	rawText string,
+	articleText string,
+	topicID *int64,
+) (int64, error) {
 	switch driver {
 	case "postgres":
 		var articleID int64
-		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text) VALUES ($1, $2, $3, $4, $5) RETURNING id`
-		if err := tx.QueryRowContext(ctx, query, sourceURL, rawText, "draft", "timeline", articleText).Scan(&articleID); err != nil {
+		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+		if err := tx.QueryRowContext(ctx, query, sourceURL, rawText, "pending", "timeline", articleText, topicID).Scan(&articleID); err != nil {
 			return 0, err
 		}
 		return articleID, nil
 	case "mysql":
-		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text) VALUES (?, ?, ?, ?, ?)`
-		result, err := tx.ExecContext(ctx, query, sourceURL, rawText, "draft", "timeline", articleText)
+		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id) VALUES (?, ?, ?, ?, ?, ?)`
+		result, err := tx.ExecContext(ctx, query, sourceURL, rawText, "pending", "timeline", articleText, topicID)
 		if err != nil {
 			return 0, err
 		}
@@ -217,9 +235,9 @@ func insertGaps(ctx context.Context, tx *sql.Tx, driver string, articleID int64,
 	var query string
 	switch driver {
 	case "postgres":
-		query = `INSERT INTO gaps (article_id, question, is_resolved) VALUES ($1, $2, $3)`
+		query = `INSERT INTO gaps (article_id, question, is_selected, is_resolved) VALUES ($1, $2, $3, $4)`
 	case "mysql":
-		query = `INSERT INTO gaps (article_id, question, is_resolved) VALUES (?, ?, ?)`
+		query = `INSERT INTO gaps (article_id, question, is_selected, is_resolved) VALUES (?, ?, ?, ?)`
 	default:
 		return errors.New("unsupported database driver")
 	}
@@ -229,11 +247,60 @@ func insertGaps(ctx context.Context, tx *sql.Tx, driver string, articleID int64,
 		if cleanGap == "" {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, query, articleID, cleanGap, false); err != nil {
+		if _, err := tx.ExecContext(ctx, query, articleID, cleanGap, true, false); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func resolveTopicID(ctx context.Context, tx *sql.Tx, driver string, category string) (*int64, error) {
+	cleanCategory := strings.TrimSpace(category)
+	if cleanCategory == "" {
+		return nil, nil
+	}
+
+	switch driver {
+	case "postgres":
+		var topicID int64
+		selectQuery := `SELECT id FROM topics WHERE LOWER(name) = LOWER($1) LIMIT 1`
+		err := tx.QueryRowContext(ctx, selectQuery, cleanCategory).Scan(&topicID)
+		if err == nil {
+			return &topicID, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+
+		insertQuery := `INSERT INTO topics (name) VALUES ($1) RETURNING id`
+		if err := tx.QueryRowContext(ctx, insertQuery, cleanCategory).Scan(&topicID); err != nil {
+			return nil, err
+		}
+		return &topicID, nil
+	case "mysql":
+		var topicID int64
+		selectQuery := `SELECT id FROM topics WHERE LOWER(name) = LOWER(?) LIMIT 1`
+		err := tx.QueryRowContext(ctx, selectQuery, cleanCategory).Scan(&topicID)
+		if err == nil {
+			return &topicID, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+
+		insertQuery := `INSERT INTO topics (name) VALUES (?)`
+		result, err := tx.ExecContext(ctx, insertQuery, cleanCategory)
+		if err != nil {
+			return nil, err
+		}
+		topicID, err = result.LastInsertId()
+		if err != nil {
+			return nil, err
+		}
+		return &topicID, nil
+	default:
+		return nil, errors.New("unsupported database driver")
+	}
 }
 
 var (
@@ -273,4 +340,31 @@ func containsTeluguScript(value string) bool {
 		}
 	}
 	return false
+}
+
+func (s *FactService) applyRuntimeAISettings(ctx context.Context) error {
+	query := `
+		SELECT p.provider_key, m.model_key
+		FROM app_settings s
+		JOIN ai_providers p ON p.id = s.provider_id
+		JOIN ai_models m ON m.id = s.model_id
+		WHERE s.id = 1
+		LIMIT 1;
+	`
+
+	var (
+		providerKey string
+		modelKey    string
+	)
+
+	err := s.database.QueryRowContext(ctx, query).Scan(&providerKey, &modelKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	s.ai.ApplySettings(providerKey, modelKey)
+	return nil
 }
