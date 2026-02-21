@@ -1,3 +1,5 @@
+const localhost = "http://localhost:8085/api";
+
 export interface AnalyseResponse {
   articleId: number;
   language: string;
@@ -106,7 +108,7 @@ interface UpdateSettingsPayload {
   model: string;
 }
 
-const apiBaseURL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8085/api").replace(/\/+$/, "");
+const apiBaseURL = (import.meta.env.VITE_API_BASE_URL || localhost).replace(/\/+$/, "");
 
 function buildURL(path: string): string {
   if (/^https?:\/\//i.test(path)) {

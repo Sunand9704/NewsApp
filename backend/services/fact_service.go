@@ -44,20 +44,39 @@ func (s *FactService) RunPhaseOne(ctx context.Context, input models.PhaseOneInpu
 	}
 
 	outputLanguage := normalizeOutputLanguage(input.Language, rawText)
+	generationLanguage := stableGenerationLanguage(outputLanguage)
+	llmInput := compactLLMInput(rawText)
 
-	facts, err := s.ai.ExtractFacts(ctx, rawText, outputLanguage)
+	facts, err := s.ai.ExtractFacts(ctx, llmInput, generationLanguage)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
 
-	gaps, err := s.ai.GenerateGapQuestions(ctx, rawText, facts, outputLanguage)
+	gaps, err := s.ai.GenerateGapQuestions(ctx, llmInput, facts, generationLanguage)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
 
-	articleText, err := s.ai.GenerateStructuredArticle(ctx, facts, gaps, outputLanguage)
+	articleText, err := s.ai.GenerateStructuredArticle(ctx, facts, gaps, generationLanguage)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
+	}
+
+	if outputLanguage != generationLanguage {
+		facts, err = s.ai.TranslateList(ctx, facts, outputLanguage)
+		if err != nil {
+			return models.PhaseOneResponse{}, err
+		}
+
+		gaps, err = s.ai.TranslateList(ctx, gaps, outputLanguage)
+		if err != nil {
+			return models.PhaseOneResponse{}, err
+		}
+
+		articleText, err = s.ai.TranslateText(ctx, articleText, outputLanguage)
+		if err != nil {
+			return models.PhaseOneResponse{}, err
+		}
 	}
 
 	articleID, err := s.savePhaseOne(ctx, sourceURL, rawText, articleText, input.Category, facts, gaps)
@@ -340,6 +359,28 @@ func containsTeluguScript(value string) bool {
 		}
 	}
 	return false
+}
+
+func stableGenerationLanguage(outputLanguage string) string {
+	if strings.EqualFold(strings.TrimSpace(outputLanguage), "Telugu") {
+		return "English"
+	}
+	return outputLanguage
+}
+
+func compactLLMInput(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return clean
+	}
+
+	const maxRunes = 12000
+	runes := []rune(clean)
+	if len(runes) <= maxRunes {
+		return clean
+	}
+
+	return string(runes[:maxRunes])
 }
 
 func (s *FactService) applyRuntimeAISettings(ctx context.Context) error {

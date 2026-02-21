@@ -7,6 +7,7 @@ const factsPromptTemplate = `Extract clean facts from the input.
 Rules:
 - Use only explicit statements from input.
 - Keep each fact short and clear.
+- Return 5 to 8 facts maximum.
 - Remove duplicates.
 - Do not invent facts.
 
@@ -21,6 +22,7 @@ const gapsPromptTemplate = `Generate missing-context questions from the input fa
 Rules:
 - Questions must point to missing verification context.
 - Keep each question practical and specific.
+- Return 5 to 8 questions maximum.
 - Do not answer the question.
 - Remove duplicates.
 
@@ -36,6 +38,7 @@ Rules:
 - Use facts as primary truth.
 - Mention unresolved gaps as context.
 - Keep it concise and readable.
+- Keep it to one paragraph (around 80-140 words).
 - Do not add unknown claims.
 
 Return strict JSON:
