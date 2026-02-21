@@ -51,7 +51,15 @@ export interface AnalysisDetail {
   status: string;
   sourceUrl: string;
   rawText: string;
+  selectedFormat: string;
   articleText: string;
+  headlineSelected: string;
+  straplineSelected: string;
+  headlineOptions: string[];
+  straplineOptions: string[];
+  slug: string;
+  metaDescription: string;
+  excerpt: string;
   createdAt: string;
   facts: AnalysisFact[];
   gaps: AnalysisGap[];
@@ -98,9 +106,16 @@ interface UpdateGapPayload {
   resolved?: boolean;
 }
 
-interface UpdateAnalysisPayload {
+export interface UpdateAnalysisPayload {
   status?: "draft" | "pending" | "completed";
   category?: string;
+  selectedFormat?: string;
+  articleText?: string;
+  headlineSelected?: string;
+  straplineSelected?: string;
+  slug?: string;
+  metaDescription?: string;
+  excerpt?: string;
 }
 
 interface UpdateSettingsPayload {
@@ -200,6 +215,12 @@ export const api = {
     await request<{ status: string }>(`/facts/${factID}`, {
       method: "PATCH",
       body: JSON.stringify(compactPayload(payload)),
+    });
+  },
+
+  async deleteFact(factID: number): Promise<void> {
+    await request<{ status: string }>(`/facts/${factID}`, {
+      method: "DELETE",
     });
   },
 

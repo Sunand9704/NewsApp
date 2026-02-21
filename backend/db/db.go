@@ -127,6 +127,7 @@ func ensureSchema(database *sql.DB, driver string) error {
 				strapline_selected TEXT,
 				slug TEXT,
 				meta_description TEXT,
+				excerpt TEXT,
 				topic_id INTEGER,
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -140,6 +141,7 @@ func ensureSchema(database *sql.DB, driver string) error {
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS strapline_selected TEXT;`,
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS slug TEXT;`,
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS meta_description TEXT;`,
+			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS excerpt TEXT;`,
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS topic_id INTEGER;`,
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
@@ -255,10 +257,12 @@ func ensureSchema(database *sql.DB, driver string) error {
 				strapline_selected TEXT,
 				slug TEXT,
 				meta_description TEXT,
+				excerpt TEXT,
 				topic_id BIGINT,
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 			);`,
+			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS excerpt TEXT;`,
 			`CREATE TABLE IF NOT EXISTS facts (
 				id BIGINT AUTO_INCREMENT PRIMARY KEY,
 				article_id BIGINT,

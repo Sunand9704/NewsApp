@@ -20,6 +20,7 @@ func RegisterAnalyseRoutes(router *gin.Engine, database *sql.DB) {
 	api.PATCH("/analyses/:id", adminController.UpdateAnalysis)
 	api.POST("/analyses/:id/facts", adminController.AddFact)
 	api.PATCH("/facts/:id", adminController.UpdateFact)
+	api.DELETE("/facts/:id", adminController.DeleteFact)
 	api.PATCH("/gaps/:id", adminController.UpdateGap)
 	api.GET("/categories", adminController.ListCategories)
 	api.GET("/settings", adminController.GetSettings)

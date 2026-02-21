@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -79,7 +80,19 @@ func (s *FactService) RunPhaseOne(ctx context.Context, input models.PhaseOneInpu
 		}
 	}
 
-	articleID, err := s.savePhaseOne(ctx, sourceURL, rawText, articleText, input.Category, facts, gaps)
+	headlines, err := s.ai.GenerateHeadlineOptions(ctx, facts, articleText, outputLanguage)
+	if err != nil {
+		log.Printf("[headlines] generation failed, using fallback: %v", err)
+		headlines = fallbackHeadlines(facts, articleText)
+	}
+
+	straplines, err := s.ai.GenerateStraplineOptions(ctx, facts, gaps, articleText, outputLanguage)
+	if err != nil {
+		log.Printf("[straplines] generation failed, using fallback: %v", err)
+		straplines = fallbackStraplines(gaps, articleText)
+	}
+
+	articleID, err := s.savePhaseOne(ctx, sourceURL, rawText, articleText, input.Category, facts, gaps, headlines, straplines)
 	if err != nil {
 		return models.PhaseOneResponse{}, err
 	}
@@ -154,6 +167,8 @@ func (s *FactService) savePhaseOne(
 	category string,
 	facts []string,
 	gaps []string,
+	headlines []string,
+	straplines []string,
 ) (int64, error) {
 	driver := db.Driver()
 	tx, err := s.database.BeginTx(ctx, nil)
@@ -173,7 +188,22 @@ func (s *FactService) savePhaseOne(
 		return 0, err
 	}
 
-	articleID, err := insertArticle(ctx, tx, driver, sourceURL, rawText, articleText, topicID)
+	headlines = dedupeAndTrim(headlines)
+	straplines = dedupeAndTrim(straplines)
+	selectedHeadline := firstListValue(headlines)
+	selectedStrapline := firstListValue(straplines)
+
+	articleID, err := insertArticle(
+		ctx,
+		tx,
+		driver,
+		sourceURL,
+		rawText,
+		articleText,
+		topicID,
+		selectedHeadline,
+		selectedStrapline,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -183,6 +213,14 @@ func (s *FactService) savePhaseOne(
 	}
 
 	if err := insertGaps(ctx, tx, driver, articleID, gaps); err != nil {
+		return 0, err
+	}
+
+	if err := insertHeadlines(ctx, tx, driver, articleID, headlines, selectedHeadline); err != nil {
+		return 0, err
+	}
+
+	if err := insertStraplines(ctx, tx, driver, articleID, straplines, selectedStrapline); err != nil {
 		return 0, err
 	}
 
@@ -202,18 +240,42 @@ func insertArticle(
 	rawText string,
 	articleText string,
 	topicID *int64,
+	headlineSelected string,
+	straplineSelected string,
 ) (int64, error) {
 	switch driver {
 	case "postgres":
 		var articleID int64
-		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-		if err := tx.QueryRowContext(ctx, query, sourceURL, rawText, "pending", "timeline", articleText, topicID).Scan(&articleID); err != nil {
+		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id, headline_selected, strapline_selected) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
+		if err := tx.QueryRowContext(
+			ctx,
+			query,
+			sourceURL,
+			rawText,
+			"pending",
+			"timeline",
+			articleText,
+			topicID,
+			headlineSelected,
+			straplineSelected,
+		).Scan(&articleID); err != nil {
 			return 0, err
 		}
 		return articleID, nil
 	case "mysql":
-		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id) VALUES (?, ?, ?, ?, ?, ?)`
-		result, err := tx.ExecContext(ctx, query, sourceURL, rawText, "pending", "timeline", articleText, topicID)
+		query := `INSERT INTO articles (source_url, raw_text, status, selected_format, article_text, topic_id, headline_selected, strapline_selected) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		result, err := tx.ExecContext(
+			ctx,
+			query,
+			sourceURL,
+			rawText,
+			"pending",
+			"timeline",
+			articleText,
+			topicID,
+			headlineSelected,
+			straplineSelected,
+		)
 		if err != nil {
 			return 0, err
 		}
@@ -273,6 +335,80 @@ func insertGaps(ctx context.Context, tx *sql.Tx, driver string, articleID int64,
 	return nil
 }
 
+func insertHeadlines(
+	ctx context.Context,
+	tx *sql.Tx,
+	driver string,
+	articleID int64,
+	headlines []string,
+	selected string,
+) error {
+	if len(headlines) == 0 {
+		return nil
+	}
+
+	var query string
+	switch driver {
+	case "postgres":
+		query = `INSERT INTO headlines (article_id, headline_text, is_selected) VALUES ($1, $2, $3)`
+	case "mysql":
+		query = `INSERT INTO headlines (article_id, headline_text, is_selected) VALUES (?, ?, ?)`
+	default:
+		return errors.New("unsupported database driver")
+	}
+
+	selectedClean := strings.TrimSpace(selected)
+	for _, headline := range headlines {
+		clean := strings.TrimSpace(headline)
+		if clean == "" {
+			continue
+		}
+		isSelected := selectedClean != "" && strings.EqualFold(clean, selectedClean)
+		if _, err := tx.ExecContext(ctx, query, articleID, clean, isSelected); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func insertStraplines(
+	ctx context.Context,
+	tx *sql.Tx,
+	driver string,
+	articleID int64,
+	straplines []string,
+	selected string,
+) error {
+	if len(straplines) == 0 {
+		return nil
+	}
+
+	var query string
+	switch driver {
+	case "postgres":
+		query = `INSERT INTO straplines (article_id, strapline_text, is_selected) VALUES ($1, $2, $3)`
+	case "mysql":
+		query = `INSERT INTO straplines (article_id, strapline_text, is_selected) VALUES (?, ?, ?)`
+	default:
+		return errors.New("unsupported database driver")
+	}
+
+	selectedClean := strings.TrimSpace(selected)
+	for _, strapline := range straplines {
+		clean := strings.TrimSpace(strapline)
+		if clean == "" {
+			continue
+		}
+		isSelected := selectedClean != "" && strings.EqualFold(clean, selectedClean)
+		if _, err := tx.ExecContext(ctx, query, articleID, clean, isSelected); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func resolveTopicID(ctx context.Context, tx *sql.Tx, driver string, category string) (*int64, error) {
 	cleanCategory := strings.TrimSpace(category)
 	if cleanCategory == "" {
@@ -320,6 +456,70 @@ func resolveTopicID(ctx context.Context, tx *sql.Tx, driver string, category str
 	default:
 		return nil, errors.New("unsupported database driver")
 	}
+}
+
+func fallbackHeadlines(facts []string, articleText string) []string {
+	options := make([]string, 0, 3)
+	for _, fact := range facts {
+		clean := strings.TrimSpace(fact)
+		if clean == "" {
+			continue
+		}
+		options = append(options, clipText(clean, 80))
+		if len(options) >= 3 {
+			break
+		}
+	}
+
+	if len(options) == 0 {
+		options = append(options, clipText(articleText, 80))
+	}
+
+	return dedupeAndTrim(options)
+}
+
+func fallbackStraplines(gaps []string, articleText string) []string {
+	options := make([]string, 0, 2)
+	for _, gap := range gaps {
+		clean := strings.TrimSpace(gap)
+		if clean == "" {
+			continue
+		}
+		options = append(options, clipText("Context: "+clean, 95))
+		if len(options) >= 2 {
+			break
+		}
+	}
+
+	if len(options) == 0 {
+		options = append(options, clipText(articleText, 95))
+	}
+
+	return dedupeAndTrim(options)
+}
+
+func firstListValue(values []string) string {
+	for _, value := range values {
+		clean := strings.TrimSpace(value)
+		if clean != "" {
+			return clean
+		}
+	}
+	return ""
+}
+
+func clipText(value string, maxRunes int) string {
+	clean := strings.TrimSpace(value)
+	if clean == "" || maxRunes <= 0 {
+		return ""
+	}
+
+	runes := []rune(clean)
+	if len(runes) <= maxRunes {
+		return clean
+	}
+
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
 }
 
 var (

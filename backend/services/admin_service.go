@@ -140,7 +140,12 @@ func (s *AdminService) GetAnalysisDetail(ctx context.Context, articleID int64) (
 			COALESCE(a.headline_selected, '') AS headline_selected,
 			COALESCE(a.source_url, '') AS source_url,
 			COALESCE(a.raw_text, '') AS raw_text,
-			COALESCE(a.article_text, '') AS article_text
+			COALESCE(a.selected_format, 'timeline') AS selected_format,
+			COALESCE(a.article_text, '') AS article_text,
+			COALESCE(a.strapline_selected, '') AS strapline_selected,
+			COALESCE(a.slug, '') AS slug,
+			COALESCE(a.meta_description, '') AS meta_description,
+			COALESCE(a.excerpt, '') AS excerpt
 		FROM articles a
 		LEFT JOIN topics t ON t.id = a.topic_id
 		WHERE a.id = %s
@@ -154,14 +159,19 @@ func (s *AdminService) GetAnalysisDetail(ctx context.Context, articleID int64) (
 	}
 
 	var (
-		id         int64
-		category   string
-		status     string
-		createdAt  time.Time
-		headline   string
-		sourceURL  string
-		rawText    string
-		articleTxt string
+		id             int64
+		category       string
+		status         string
+		createdAt      time.Time
+		headline       string
+		sourceURL      string
+		rawText        string
+		selectedFormat string
+		articleTxt     string
+		strapline      string
+		slug           string
+		metaDesc       string
+		excerpt        string
 	)
 
 	if err := s.database.QueryRowContext(ctx, fmt.Sprintf(articleQuery, idParam), args...).Scan(
@@ -172,7 +182,12 @@ func (s *AdminService) GetAnalysisDetail(ctx context.Context, articleID int64) (
 		&headline,
 		&sourceURL,
 		&rawText,
+		&selectedFormat,
 		&articleTxt,
+		&strapline,
+		&slug,
+		&metaDesc,
+		&excerpt,
 	); err != nil {
 		return models.AnalysisDetail{}, err
 	}
@@ -187,17 +202,51 @@ func (s *AdminService) GetAnalysisDetail(ctx context.Context, articleID int64) (
 		return models.AnalysisDetail{}, err
 	}
 
+	headlineOptions, selectedHeadlineFromOptions, err := s.listHeadlineOptionsByArticleID(ctx, articleID)
+	if err != nil {
+		return models.AnalysisDetail{}, err
+	}
+
+	straplineOptions, selectedStraplineFromOptions, err := s.listStraplineOptionsByArticleID(ctx, articleID)
+	if err != nil {
+		return models.AnalysisDetail{}, err
+	}
+
+	selectedHeadline := strings.TrimSpace(headline)
+	if selectedHeadline == "" {
+		selectedHeadline = strings.TrimSpace(selectedHeadlineFromOptions)
+	}
+	if selectedHeadline != "" {
+		headlineOptions = prependIfMissing(headlineOptions, selectedHeadline)
+	}
+
+	selectedStrapline := strings.TrimSpace(strapline)
+	if selectedStrapline == "" {
+		selectedStrapline = strings.TrimSpace(selectedStraplineFromOptions)
+	}
+	if selectedStrapline != "" {
+		straplineOptions = prependIfMissing(straplineOptions, selectedStrapline)
+	}
+
 	return models.AnalysisDetail{
-		ID:          id,
-		Title:       buildAnalysisTitle(id, headline, sourceURL, rawText),
-		Category:    category,
-		Status:      formatStatus(status),
-		SourceURL:   sourceURL,
-		RawText:     rawText,
-		ArticleText: articleTxt,
-		CreatedAt:   createdAt,
-		Facts:       facts,
-		Gaps:        gaps,
+		ID:                id,
+		Title:             buildAnalysisTitle(id, headline, sourceURL, rawText),
+		Category:          category,
+		Status:            formatStatus(status),
+		SourceURL:         sourceURL,
+		RawText:           rawText,
+		SelectedFormat:    selectedFormat,
+		ArticleText:       articleTxt,
+		HeadlineSelected:  selectedHeadline,
+		StraplineSelected: selectedStrapline,
+		HeadlineOptions:   headlineOptions,
+		StraplineOptions:  straplineOptions,
+		Slug:              slug,
+		MetaDescription:   metaDesc,
+		Excerpt:           excerpt,
+		CreatedAt:         createdAt,
+		Facts:             facts,
+		Gaps:              gaps,
 	}, nil
 }
 
@@ -268,6 +317,18 @@ func (s *AdminService) UpdateFact(ctx context.Context, factID int64, text *strin
 	if err != nil {
 		return err
 	}
+	if err := ensureRowsAffected(result); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AdminService) DeleteFact(ctx context.Context, factID int64) error {
+	query := fmt.Sprintf("DELETE FROM facts WHERE id = %s", s.bind(1))
+	result, err := s.database.ExecContext(ctx, query, factID)
+	if err != nil {
+		return err
+	}
 	return ensureRowsAffected(result)
 }
 
@@ -308,12 +369,27 @@ func (s *AdminService) UpdateGap(ctx context.Context, gapID int64, text *string,
 	if err != nil {
 		return err
 	}
-	return ensureRowsAffected(result)
+	if err := ensureRowsAffected(result); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (s *AdminService) UpdateAnalysis(ctx context.Context, articleID int64, status *string, category *string) error {
-	setClauses := make([]string, 0, 3)
-	args := make([]any, 0, 4)
+func (s *AdminService) UpdateAnalysis(
+	ctx context.Context,
+	articleID int64,
+	status *string,
+	category *string,
+	selectedFormat *string,
+	articleText *string,
+	headlineSelected *string,
+	straplineSelected *string,
+	slug *string,
+	metaDescription *string,
+	excerpt *string,
+) error {
+	setClauses := make([]string, 0, 9)
+	args := make([]any, 0, 12)
 	placeholderIndex := 1
 	updated := false
 
@@ -339,6 +415,55 @@ func (s *AdminService) UpdateAnalysis(ctx context.Context, articleID int64, stat
 		updated = true
 	}
 
+	if selectedFormat != nil {
+		setClauses = append(setClauses, fmt.Sprintf("selected_format = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*selectedFormat))
+		placeholderIndex++
+		updated = true
+	}
+
+	if articleText != nil {
+		setClauses = append(setClauses, fmt.Sprintf("article_text = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*articleText))
+		placeholderIndex++
+		updated = true
+	}
+
+	if headlineSelected != nil {
+		setClauses = append(setClauses, fmt.Sprintf("headline_selected = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*headlineSelected))
+		placeholderIndex++
+		updated = true
+	}
+
+	if straplineSelected != nil {
+		setClauses = append(setClauses, fmt.Sprintf("strapline_selected = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*straplineSelected))
+		placeholderIndex++
+		updated = true
+	}
+
+	if slug != nil {
+		setClauses = append(setClauses, fmt.Sprintf("slug = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*slug))
+		placeholderIndex++
+		updated = true
+	}
+
+	if metaDescription != nil {
+		setClauses = append(setClauses, fmt.Sprintf("meta_description = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*metaDescription))
+		placeholderIndex++
+		updated = true
+	}
+
+	if excerpt != nil {
+		setClauses = append(setClauses, fmt.Sprintf("excerpt = %s", s.bind(placeholderIndex)))
+		args = append(args, strings.TrimSpace(*excerpt))
+		placeholderIndex++
+		updated = true
+	}
+
 	if !updated {
 		return errors.New("no analysis fields provided")
 	}
@@ -356,7 +481,103 @@ func (s *AdminService) UpdateAnalysis(ctx context.Context, articleID int64, stat
 	if err != nil {
 		return err
 	}
-	return ensureRowsAffected(result)
+	if err := ensureRowsAffected(result); err != nil {
+		return err
+	}
+
+	if headlineSelected != nil {
+		if err := s.syncHeadlineSelection(ctx, articleID, strings.TrimSpace(*headlineSelected)); err != nil {
+			return err
+		}
+	}
+
+	if straplineSelected != nil {
+		if err := s.syncStraplineSelection(ctx, articleID, strings.TrimSpace(*straplineSelected)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *AdminService) syncHeadlineSelection(ctx context.Context, articleID int64, selected string) error {
+	resetQuery := fmt.Sprintf("UPDATE headlines SET is_selected = %s WHERE article_id = %s", s.bind(1), s.bind(2))
+	if _, err := s.database.ExecContext(ctx, resetQuery, false, articleID); err != nil {
+		return err
+	}
+
+	clean := strings.TrimSpace(selected)
+	if clean == "" {
+		return nil
+	}
+
+	updateQuery := fmt.Sprintf(
+		"UPDATE headlines SET is_selected = %s WHERE article_id = %s AND LOWER(TRIM(headline_text)) = LOWER(%s)",
+		s.bind(1),
+		s.bind(2),
+		s.bind(3),
+	)
+	result, err := s.database.ExecContext(ctx, updateQuery, true, articleID, clean)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	insertQuery := fmt.Sprintf(
+		"INSERT INTO headlines (article_id, headline_text, is_selected) VALUES (%s, %s, %s)",
+		s.bind(1),
+		s.bind(2),
+		s.bind(3),
+	)
+	_, err = s.database.ExecContext(ctx, insertQuery, articleID, clean, true)
+	return err
+}
+
+func (s *AdminService) syncStraplineSelection(ctx context.Context, articleID int64, selected string) error {
+	resetQuery := fmt.Sprintf("UPDATE straplines SET is_selected = %s WHERE article_id = %s", s.bind(1), s.bind(2))
+	if _, err := s.database.ExecContext(ctx, resetQuery, false, articleID); err != nil {
+		return err
+	}
+
+	clean := strings.TrimSpace(selected)
+	if clean == "" {
+		return nil
+	}
+
+	updateQuery := fmt.Sprintf(
+		"UPDATE straplines SET is_selected = %s WHERE article_id = %s AND LOWER(TRIM(strapline_text)) = LOWER(%s)",
+		s.bind(1),
+		s.bind(2),
+		s.bind(3),
+	)
+	result, err := s.database.ExecContext(ctx, updateQuery, true, articleID, clean)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	insertQuery := fmt.Sprintf(
+		"INSERT INTO straplines (article_id, strapline_text, is_selected) VALUES (%s, %s, %s)",
+		s.bind(1),
+		s.bind(2),
+		s.bind(3),
+	)
+	_, err = s.database.ExecContext(ctx, insertQuery, articleID, clean, true)
+	return err
 }
 
 func (s *AdminService) ListCategories(ctx context.Context) ([]string, error) {
@@ -567,6 +788,100 @@ func (s *AdminService) listGapsByArticleID(ctx context.Context, articleID int64)
 	}
 
 	return gaps, nil
+}
+
+func (s *AdminService) listHeadlineOptionsByArticleID(ctx context.Context, articleID int64) ([]string, string, error) {
+	query := `
+		SELECT COALESCE(headline_text, ''), COALESCE(is_selected, false)
+		FROM headlines
+		WHERE article_id = %s
+		ORDER BY id ASC;
+	`
+
+	idBind := "?"
+	if s.driver == "postgres" {
+		idBind = "$1"
+	}
+
+	rows, err := s.database.QueryContext(ctx, fmt.Sprintf(query, idBind), articleID)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	options := make([]string, 0)
+	selected := ""
+	for rows.Next() {
+		var (
+			text       string
+			isSelected bool
+		)
+		if err := rows.Scan(&text, &isSelected); err != nil {
+			return nil, "", err
+		}
+
+		clean := strings.TrimSpace(text)
+		if clean == "" {
+			continue
+		}
+		options = append(options, clean)
+		if isSelected && selected == "" {
+			selected = clean
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	return dedupeStrings(options), selected, nil
+}
+
+func (s *AdminService) listStraplineOptionsByArticleID(ctx context.Context, articleID int64) ([]string, string, error) {
+	query := `
+		SELECT COALESCE(strapline_text, ''), COALESCE(is_selected, false)
+		FROM straplines
+		WHERE article_id = %s
+		ORDER BY id ASC;
+	`
+
+	idBind := "?"
+	if s.driver == "postgres" {
+		idBind = "$1"
+	}
+
+	rows, err := s.database.QueryContext(ctx, fmt.Sprintf(query, idBind), articleID)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	options := make([]string, 0)
+	selected := ""
+	for rows.Next() {
+		var (
+			text       string
+			isSelected bool
+		)
+		if err := rows.Scan(&text, &isSelected); err != nil {
+			return nil, "", err
+		}
+
+		clean := strings.TrimSpace(text)
+		if clean == "" {
+			continue
+		}
+		options = append(options, clean)
+		if isSelected && selected == "" {
+			selected = clean
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	return dedupeStrings(options), selected, nil
 }
 
 func (s *AdminService) listProvidersAndModels(ctx context.Context) ([]models.ProviderOption, error) {
@@ -794,6 +1109,42 @@ func normalizeLimit(limit int) int {
 
 func singleLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func dedupeStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		clean := strings.TrimSpace(value)
+		if clean == "" {
+			continue
+		}
+		key := strings.ToLower(clean)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
+}
+
+func prependIfMissing(values []string, value string) []string {
+	clean := strings.TrimSpace(value)
+	if clean == "" {
+		return dedupeStrings(values)
+	}
+
+	for _, item := range values {
+		if strings.EqualFold(strings.TrimSpace(item), clean) {
+			return dedupeStrings(values)
+		}
+	}
+
+	next := make([]string, 0, len(values)+1)
+	next = append(next, clean)
+	next = append(next, values...)
+	return dedupeStrings(next)
 }
 
 func truncate(value string, max int) string {

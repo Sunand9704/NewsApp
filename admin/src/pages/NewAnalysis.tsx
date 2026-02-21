@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -11,32 +15,146 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api, type UpdateAnalysisPayload } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import {
-  Search,
+  ArrowRight,
+  Check,
+  FileText,
+  Lightbulb,
+  Pencil,
   Plus,
   RotateCcw,
-  Save,
-  Pencil,
-  Lightbulb,
-  FileText,
+  Search,
+  Trash2,
 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
 
 type OutputLanguage = "English" | "Telugu";
+type Step = 1 | 2 | 3 | 4;
+type FormatValue = "stat-card" | "table" | "timeline";
+
+interface FormatCard {
+  value: FormatValue;
+  label: string;
+  confidence: number;
+  description: string;
+  preview: string;
+}
+
+const FORMAT_OPTIONS: FormatCard[] = [
+  {
+    value: "stat-card",
+    label: "Stat Card + Paragraph",
+    confidence: 52,
+    description: "Best for a single dominant number",
+    preview: "[ Stat ]  |  One-paragraph summary",
+  },
+  {
+    value: "table",
+    label: "Table + Paragraph",
+    confidence: 31,
+    description: "Best for side-by-side fact comparison",
+    preview: "[ Key data table ] + narrative block",
+  },
+  {
+    value: "timeline",
+    label: "Timeline + Paragraph",
+    confidence: 17,
+    description: "Best for cause-effect and sequence",
+    preview: "[ Event 1 -> Event 2 -> Event 3 ]",
+  },
+];
+
+function parseStep(value: string | null): Step {
+  if (value === "2") return 2;
+  if (value === "3") return 3;
+  if (value === "4") return 4;
+  return 1;
+}
+
+function normalizeFormat(value?: string): FormatValue {
+  const clean = String(value ?? "").toLowerCase();
+  if (clean.includes("stat")) return "stat-card";
+  if (clean.includes("table")) return "table";
+  return "timeline";
+}
+
+function slugify(value: string | null | undefined): string {
+  const cleanValue = String(value ?? "");
+  return cleanValue
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function clip(value: string | null | undefined, size: number): string {
+  const clean = String(value ?? "").trim();
+  if (clean.length <= size) return clean;
+  return `${clean.slice(0, size - 3)}...`;
+}
+
+function unique(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  values.forEach((value) => {
+    const clean = String(value ?? "").trim();
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    output.push(clean);
+  });
+
+  return output;
+}
 
 const NewAnalysis = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { analysisId } = useParams();
+  const [searchParams] = useSearchParams();
 
+  const [step, setStep] = useState<Step>(() => parseStep(searchParams.get("step")));
   const [url, setUrl] = useState("");
   const [articleText, setArticleText] = useState("");
   const [category, setCategory] = useState("");
+  const [customTopic, setCustomTopic] = useState("");
   const [language, setLanguage] = useState<OutputLanguage>("English");
   const [analysisID, setAnalysisID] = useState<number | null>(null);
+
   const [editingID, setEditingID] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+
+  const [selectedFormat, setSelectedFormat] = useState<FormatValue>("timeline");
+  const [articleDraft, setArticleDraft] = useState("");
+  const [headlineOptions, setHeadlineOptions] = useState<string[]>([]);
+  const [straplineOptions, setStraplineOptions] = useState<string[]>([]);
+  const [selectedHeadline, setSelectedHeadline] = useState("");
+  const [selectedStrapline, setSelectedStrapline] = useState("");
+  const [newHeadline, setNewHeadline] = useState("");
+  const [newStrapline, setNewStrapline] = useState("");
+  const [slug, setSlug] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
+  const [excerpt, setExcerpt] = useState("");
+  const [hydratedAnalysisID, setHydratedAnalysisID] = useState<number | null>(null);
+
+  useEffect(() => {
+    const parsed = Number(analysisId);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setAnalysisID(null);
+      setStep(1);
+      return;
+    }
+
+    setAnalysisID(parsed);
+    setStep(searchParams.has("step") ? parseStep(searchParams.get("step")) : 4);
+  }, [analysisId, searchParams]);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -49,34 +167,29 @@ const NewAnalysis = () => {
     enabled: analysisID !== null,
   });
 
-  useEffect(() => {
-    if (
-      analysisQuery.data?.category &&
-      analysisQuery.data.category !== "Uncategorized" &&
-      !category
-    ) {
-      setCategory(analysisQuery.data.category);
-    }
-  }, [analysisQuery.data?.category, category]);
-
   const analyseMutation = useMutation({
     mutationFn: (payload: {
       url?: string;
       text?: string;
       category?: string;
       language?: OutputLanguage;
-    }) =>
-      api.analyseArticle(payload),
+    }) => api.analyseArticle(payload),
     onSuccess: (result) => {
       setAnalysisID(result.articleId);
+      setHydratedAnalysisID(null);
+      setStep(2);
+      navigate(`/new-analysis/${result.articleId}?step=2`);
+
       if (result.language === "English" || result.language === "Telugu") {
         setLanguage(result.language);
       }
+
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["analyses"] });
+
       toast({
         title: "Analysis completed",
-        description: `Loaded analysis #${result.articleId} from database.`,
+        description: `Loaded analysis #${result.articleId}.`,
       });
     },
     onError: (error: Error) => {
@@ -101,6 +214,22 @@ const NewAnalysis = () => {
     onError: (error: Error) => {
       toast({
         title: "Fact update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteFactMutation = useMutation({
+    mutationFn: (factID: number) => api.deleteFact(factID),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["analysis", analysisID] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["analyses"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete failed",
         description: error.message,
         variant: "destructive",
       });
@@ -133,7 +262,7 @@ const NewAnalysis = () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast({
         title: "Fact added",
-        description: "A new fact row was added to the database.",
+        description: "A new fact row was added.",
       });
     },
     onError: (error: Error) => {
@@ -145,20 +274,13 @@ const NewAnalysis = () => {
     },
   });
 
-  const confirmMutation = useMutation({
-    mutationFn: () =>
-      api.updateAnalysis(analysisID as number, {
-        status: "completed",
-        category: category || undefined,
-      }),
+  const updateAnalysisMutation = useMutation({
+    mutationFn: (payload: UpdateAnalysisPayload) => api.updateAnalysis(analysisID as number, payload),
     onSuccess: (result) => {
       queryClient.setQueryData(["analysis", analysisID], result);
+      queryClient.invalidateQueries({ queryKey: ["analysis", analysisID] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["analyses"] });
-      toast({
-        title: "Saved",
-        description: "Analysis status updated to completed.",
-      });
     },
     onError: (error: Error) => {
       toast({
@@ -169,9 +291,90 @@ const NewAnalysis = () => {
     },
   });
 
+  useEffect(() => {
+    if (!analysisID || !analysisQuery.data || hydratedAnalysisID === analysisID) return;
+
+    const data = analysisQuery.data;
+
+    if (data.category && data.category !== "Uncategorized") {
+      setCategory(data.category);
+    }
+
+    setSelectedFormat(normalizeFormat(data.selectedFormat));
+    setArticleDraft(data.articleText || "");
+
+    const backendHeadlines = unique(data.headlineOptions ?? []);
+    const backendStraplines = unique(data.straplineOptions ?? []);
+
+    const includedFacts = data.facts.filter((fact) => fact.included).map((fact) => clip(fact.text, 90));
+    const selectedGaps = data.gaps.filter((gap) => gap.selected).map((gap) => clip(gap.text, 80));
+
+    const fallbackHeadline = clip(data.title || `Analysis ${data.id}`, 90);
+    const fallbackHeadlines = unique([
+      data.headlineSelected,
+      fallbackHeadline,
+      ...includedFacts,
+      `${fallbackHeadline} - Key Facts`,
+    ]);
+
+    const fallbackStrapline = clip(
+      data.category && data.category !== "Uncategorized"
+        ? `${data.category} update with verified data points`
+        : "Verified breakdown from extracted facts",
+      90,
+    );
+    const fallbackStraplines = unique([
+      data.straplineSelected,
+      fallbackStrapline,
+      ...selectedGaps.map((item) => `Why this matters: ${item}`),
+    ]);
+
+    const nextHeadlines = backendHeadlines.length > 0 ? backendHeadlines : fallbackHeadlines;
+    const nextStraplines = backendStraplines.length > 0 ? backendStraplines : fallbackStraplines;
+
+    setHeadlineOptions(nextHeadlines);
+    setStraplineOptions(nextStraplines);
+    setSelectedHeadline(data.headlineSelected || nextHeadlines[0] || "");
+    setSelectedStrapline(data.straplineSelected || nextStraplines[0] || "");
+
+    const fallbackSlug = slugify(data.headlineSelected || nextHeadlines[0] || data.title);
+    setSlug(data.slug || fallbackSlug);
+    setMetaDescription(data.metaDescription || clip(data.articleText || data.rawText, 155));
+    setExcerpt(data.excerpt || clip(data.articleText || data.rawText, 180));
+
+    setHydratedAnalysisID(analysisID);
+  }, [analysisID, analysisQuery.data, hydratedAnalysisID]);
+
   const facts = analysisQuery.data?.facts ?? [];
   const gaps = analysisQuery.data?.gaps ?? [];
-  const isAnalysed = analysisID !== null;
+
+  const includedFactsCount = useMemo(() => facts.filter((fact) => fact.included).length, [facts]);
+
+  const isBusy =
+    analyseMutation.isPending ||
+    updateFactMutation.isPending ||
+    deleteFactMutation.isPending ||
+    updateGapMutation.isPending ||
+    addFactMutation.isPending ||
+    updateAnalysisMutation.isPending;
+
+  const canOpenStep = (value: Step) => {
+    if (value === 1) return true;
+    return analysisID !== null;
+  };
+
+  const moveToStep = (value: Step) => {
+    if (!canOpenStep(value)) return;
+
+    setStep(value);
+
+    if (analysisID) {
+      navigate(`/new-analysis/${analysisID}?step=${value}`);
+      return;
+    }
+
+    navigate("/new-analysis");
+  };
 
   const handleAnalyse = () => {
     const cleanURL = url.trim();
@@ -195,17 +398,11 @@ const NewAnalysis = () => {
   };
 
   const toggleFact = (factID: number, included: boolean) => {
-    updateFactMutation.mutate({
-      factID,
-      payload: { included: !included },
-    });
+    updateFactMutation.mutate({ factID, payload: { included: !included } });
   };
 
   const toggleGap = (gapID: number, selected: boolean) => {
-    updateGapMutation.mutate({
-      gapID,
-      payload: { selected: !selected },
-    });
+    updateGapMutation.mutate({ gapID, payload: { selected: !selected } });
   };
 
   const startEdit = (fact: { id: number; text: string }) => {
@@ -225,29 +422,22 @@ const NewAnalysis = () => {
     }
 
     updateFactMutation.mutate(
-      {
-        factID,
-        payload: { text: clean },
-      },
-      {
-        onSuccess: () => {
-          setEditingID(null);
-        },
-      },
+      { factID, payload: { text: clean } },
+      { onSuccess: () => setEditingID(null) },
     );
   };
 
   const addFact = () => {
-    if (!analysisID) {
-      return;
-    }
+    if (!analysisID) return;
     addFactMutation.mutate("New fact...");
   };
 
+  const deleteFact = (factID: number) => {
+    deleteFactMutation.mutate(factID);
+  };
+
   const rerunAI = () => {
-    if (!analysisQuery.data) {
-      return;
-    }
+    if (!analysisQuery.data) return;
 
     analyseMutation.mutate({
       text: analysisQuery.data.rawText,
@@ -256,267 +446,610 @@ const NewAnalysis = () => {
     });
   };
 
-  const isBusy =
-    analyseMutation.isPending ||
-    updateFactMutation.isPending ||
-    updateGapMutation.isPending ||
-    addFactMutation.isPending ||
-    confirmMutation.isPending;
+  const confirmFacts = () => {
+    if (!analysisID) return;
+    moveToStep(3);
+  };
 
-  return (
-    <DashboardLayout>
-      <div className="animate-fade-in">
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">New Analysis</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Paste a URL or article text to extract verifiable facts.
-        </p>
+  const continueToWriter = () => {
+    if (!analysisID) return;
 
-        {!isAnalysed && (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <label className="text-sm font-medium text-foreground">Article URL</label>
-              <div className="mt-2 flex gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://example.com/article..."
-                    className="pl-9"
+    updateAnalysisMutation.mutate(
+      { selectedFormat, status: "pending" },
+      { onSuccess: () => moveToStep(4) },
+    );
+  };
+
+  const addCustomHeadline = () => {
+    const clean = newHeadline.trim();
+    if (!clean) return;
+    setHeadlineOptions((current) => unique([clean, ...current]));
+    setSelectedHeadline(clean);
+    setNewHeadline("");
+  };
+
+  const addCustomStrapline = () => {
+    const clean = newStrapline.trim();
+    if (!clean) return;
+    setStraplineOptions((current) => unique([clean, ...current]));
+    setSelectedStrapline(clean);
+    setNewStrapline("");
+  };
+
+  const applyCustomTopic = () => {
+    const clean = customTopic.trim();
+    if (!clean) return;
+    setCategory(clean);
+    setCustomTopic("");
+  };
+
+  const saveDraft = () => {
+    if (!analysisID) return;
+
+    updateAnalysisMutation.mutate(
+      {
+        status: "draft",
+        category: category || undefined,
+        selectedFormat,
+        articleText: articleDraft,
+        headlineSelected: selectedHeadline || undefined,
+        straplineSelected: selectedStrapline || undefined,
+        slug: slug || undefined,
+        metaDescription: metaDescription || undefined,
+        excerpt: excerpt || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Draft saved",
+            description: "Article draft and metadata were saved.",
+          });
+          queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          queryClient.invalidateQueries({ queryKey: ["analyses"] });
+        },
+      },
+    );
+  };
+
+  const backToInput = () => {
+    setAnalysisID(null);
+    setStep(1);
+    setHydratedAnalysisID(null);
+    navigate("/new-analysis");
+  };
+
+  const stepItems: Array<{ id: Step; label: string }> = [
+    { id: 1, label: "Input" },
+    { id: 2, label: "Facts" },
+    { id: 3, label: "Format" },
+    { id: 4, label: "Write" },
+  ];
+
+  const renderStep1 = () => (
+    <div className="mx-auto mt-6 max-w-3xl space-y-4">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <label className="text-sm font-medium text-foreground">Paste article URL</label>
+        <div className="mt-2 flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com/article"
+              className="pl-9"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs font-medium text-muted-foreground">OR</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <label className="text-sm font-medium text-foreground">Paste article text</label>
+        <Textarea
+          value={articleText}
+          onChange={(e) => setArticleText(e.target.value)}
+          placeholder="Paste the full article text here"
+          className="mt-2 min-h-[180px] resize-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
+        <div>
+          <Label className="mb-2 block text-sm font-medium text-foreground">Category</Label>
+          <Select value={category || undefined} onValueChange={setCategory}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select category" />
+            </SelectTrigger>
+            <SelectContent>
+              {categoriesQuery.data?.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {item}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="mb-2 block text-sm font-medium text-foreground">Language</Label>
+          <Select value={language} onValueChange={(value) => setLanguage(value as OutputLanguage)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="English">English</SelectItem>
+              <SelectItem value="Telugu">Telugu</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Button onClick={handleAnalyse} className="h-10 self-end px-6" disabled={analyseMutation.isPending}>
+          <Search className="mr-2 h-4 w-4" />
+          {analyseMutation.isPending ? "Analysing..." : "Analyse"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderStep2 = () => {
+    if (!analysisID) return null;
+
+    if (analysisQuery.isLoading) {
+      return (
+        <div className="mt-6 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
+          Loading facts and gaps...
+        </div>
+      );
+    }
+
+    if (analysisQuery.error) {
+      return (
+        <div className="mt-6 rounded-xl border border-destructive/40 bg-card p-5 text-sm text-destructive shadow-sm">
+          Failed to load analysis data.
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-6 space-y-5">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold text-foreground">Confirmed Facts</h3>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {includedFactsCount}/{facts.length} selected
+              </span>
+            </div>
+
+            <div className="divide-y divide-border">
+              {facts.length === 0 && (
+                <div className="px-5 py-4 text-sm text-muted-foreground">No facts generated.</div>
+              )}
+
+              {facts.map((fact) => (
+                <div key={fact.id} className="flex items-start gap-3 px-5 py-3 hover:bg-muted/30">
+                  <Checkbox
+                    checked={fact.included}
+                    onCheckedChange={() => toggleFact(fact.id, fact.included)}
+                    className="mt-1"
                   />
+
+                  {editingID === fact.id ? (
+                    <Input
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onBlur={() => saveEdit(fact.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEdit(fact.id);
+                      }}
+                      className="h-8 flex-1 text-sm"
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "flex-1 text-sm",
+                        fact.included ? "text-foreground" : "text-muted-foreground line-through",
+                      )}
+                    >
+                      {fact.text}
+                    </span>
+                  )}
+
+                  {editingID !== fact.id && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => startEdit(fact)}
+                        className="text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteFact(fact.id)}
+                        className="text-muted-foreground transition-colors hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
+              ))}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-xs font-medium text-muted-foreground">OR</span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-              <label className="text-sm font-medium text-foreground">Paste Article Text</label>
-              <Textarea
-                value={articleText}
-                onChange={(e) => setArticleText(e.target.value)}
-                placeholder="Paste the full article text here..."
-                className="mt-2 min-h-[160px] resize-none"
-              />
-            </div>
-
-            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-end">
-              <div className="w-full sm:w-52">
-                <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
-                <Select value={category || undefined} onValueChange={setCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categoriesQuery.data?.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-full sm:w-44">
-                <label className="mb-2 block text-sm font-medium text-foreground">Language</label>
-                <Select value={language} onValueChange={(value) => setLanguage(value as OutputLanguage)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="English">English</SelectItem>
-                    <SelectItem value="Telugu">Telugu</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button onClick={handleAnalyse} className="h-10 px-6" disabled={analyseMutation.isPending}>
-                <Search className="mr-2 h-4 w-4" />
-                {analyseMutation.isPending ? "Analysing..." : "Analyse"}
+            <div className="border-t border-border px-5 py-3">
+              <Button variant="ghost" size="sm" onClick={addFact} className="text-primary">
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Add fact
               </Button>
             </div>
           </div>
-        )}
 
-        {isAnalysed && (
-          <div className="mt-6">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setAnalysisID(null)}
-              className="mb-4 text-muted-foreground"
-            >
-              Back to input
-            </Button>
-
-            {analysisQuery.isLoading && (
-              <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
-                Loading analysis data...
+          <div className="rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-warning" />
+                <h3 className="text-sm font-semibold text-foreground">Missing / Gaps</h3>
               </div>
-            )}
+              <span className="text-xs text-muted-foreground">
+                {gaps.filter((gap) => gap.selected).length}/{gaps.length} selected
+              </span>
+            </div>
 
-            {!analysisQuery.isLoading && analysisQuery.error && (
-              <div className="rounded-xl border border-destructive/40 bg-card p-5 text-sm text-destructive shadow-sm">
-                Failed to load analysis from database.{" "}
-                <button className="underline" onClick={() => analysisQuery.refetch()}>
-                  Retry
-                </button>
-              </div>
-            )}
+            <div className="divide-y divide-border">
+              {gaps.length === 0 && (
+                <div className="px-5 py-4 text-sm text-muted-foreground">No gap suggestions generated.</div>
+              )}
 
-            {!analysisQuery.isLoading && !analysisQuery.error && analysisQuery.data && (
-              <>
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                  <div className="rounded-xl border border-border bg-card shadow-sm">
-                    <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-primary" />
-                        <h3 className="text-sm font-semibold text-foreground">Extracted Facts</h3>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {facts.filter((f) => f.included).length}/{facts.length} selected
-                      </span>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {facts.length === 0 && (
-                        <div className="px-5 py-4 text-sm text-muted-foreground">No facts generated.</div>
-                      )}
-                      {facts.map((fact) => (
-                        <div
-                          key={fact.id}
-                          className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
-                        >
-                          <Checkbox
-                            checked={fact.included}
-                            onCheckedChange={() => toggleFact(fact.id, fact.included)}
-                            className="mt-0.5"
-                          />
-                          {editingID === fact.id ? (
-                            <Input
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              onBlur={() => saveEdit(fact.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  saveEdit(fact.id);
-                                }
-                              }}
-                              className="h-8 flex-1 text-sm"
-                              autoFocus
-                            />
-                          ) : (
-                            <span
-                              className={`flex-1 text-sm ${
-                                fact.included ? "text-foreground" : "text-muted-foreground line-through"
-                              }`}
-                            >
-                              {fact.text}
-                            </span>
-                          )}
-                          {editingID !== fact.id && (
-                            <button
-                              onClick={() => startEdit(fact)}
-                              className="text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="border-t border-border px-5 py-3">
-                      <Button variant="ghost" size="sm" onClick={addFact} className="text-primary">
-                        <Plus className="mr-1.5 h-3.5 w-3.5" />
-                        Add fact
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-border bg-card shadow-sm">
-                    <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                      <div className="flex items-center gap-2">
-                        <Lightbulb className="h-4 w-4 text-warning" />
-                        <h3 className="text-sm font-semibold text-foreground">Gap Suggestions</h3>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {gaps.filter((g) => g.selected).length}/{gaps.length} selected
-                      </span>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {gaps.length === 0 && (
-                        <div className="px-5 py-4 text-sm text-muted-foreground">No gap suggestions generated.</div>
-                      )}
-                      {gaps.map((gap) => (
-                        <div
-                          key={gap.id}
-                          className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
-                        >
-                          <Checkbox
-                            checked={gap.selected}
-                            onCheckedChange={() => toggleGap(gap.id, gap.selected)}
-                            className="mt-0.5"
-                          />
-                          <span
-                            className={`flex-1 text-sm ${
-                              gap.selected ? "text-foreground" : "text-muted-foreground"
-                            }`}
-                          >
-                            {gap.text}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              {gaps.map((gap) => (
+                <div key={gap.id} className="flex items-start gap-3 px-5 py-3 hover:bg-muted/30">
+                  <Checkbox
+                    checked={gap.selected}
+                    onCheckedChange={() => toggleGap(gap.id, gap.selected)}
+                    className="mt-1"
+                  />
+                  <span className="flex-1 text-sm text-foreground">{gap.text}</span>
                 </div>
-
-                <div className="sticky bottom-0 mt-6 flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
-                  <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
-                    <div className="w-full sm:w-52">
-                    <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
-                    <Select value={category || undefined} onValueChange={setCategory}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoriesQuery.data?.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    </div>
-                    <div className="w-full sm:w-44">
-                      <label className="mb-2 block text-sm font-medium text-foreground">Language</label>
-                      <Select value={language} onValueChange={(value) => setLanguage(value as OutputLanguage)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="English">English</SelectItem>
-                          <SelectItem value="Telugu">Telugu</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Button variant="outline" className="gap-2" onClick={rerunAI} disabled={isBusy}>
-                      <RotateCcw className="h-4 w-4" />
-                      Re-run AI
-                    </Button>
-                    <Button className="gap-2" onClick={() => confirmMutation.mutate()} disabled={isBusy}>
-                      <Save className="h-4 w-4" />
-                      {confirmMutation.isPending ? "Saving..." : "Confirm & Save"}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
+              ))}
+            </div>
           </div>
+        </div>
+
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+          <Button variant="outline" className="gap-2" onClick={rerunAI} disabled={isBusy}>
+            <RotateCcw className="h-4 w-4" />
+            Re-run AI
+          </Button>
+          <Button onClick={confirmFacts} disabled={isBusy || includedFactsCount === 0}>
+            Confirm Facts
+            <ArrowRight className="ml-1.5 h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStep3 = () => (
+    <div className="mt-6 space-y-5">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <h3 className="text-base font-semibold text-foreground">Choose format for this story</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Select one of the 3 formats to continue to writing.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {FORMAT_OPTIONS.map((option) => {
+          const active = selectedFormat === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setSelectedFormat(option.value)}
+              className={cn(
+                "rounded-xl border bg-card p-5 text-left shadow-sm transition-colors",
+                active ? "border-primary ring-1 ring-primary" : "border-border hover:border-primary/40",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+                </div>
+                <span className="text-sm font-semibold text-foreground">{option.confidence}%</span>
+              </div>
+
+              <div className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                {option.preview}
+              </div>
+
+              {active && (
+                <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                  <Check className="h-3.5 w-3.5" />
+                  Selected
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+        <Button variant="outline" onClick={() => moveToStep(2)}>
+          Back to Facts
+        </Button>
+        <Button onClick={continueToWriter} disabled={!selectedFormat || isBusy}>
+          Write Article
+          <ArrowRight className="ml-1.5 h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderStep4 = () => {
+    if (!analysisID) return null;
+
+    const words = articleDraft.trim() ? articleDraft.trim().split(/\s+/).length : 0;
+
+    return (
+      <div className="mt-6 space-y-5">
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(340px,1fr)]">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Format: {FORMAT_OPTIONS.find((item) => item.value === selectedFormat)?.label}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => moveToStep(3)}>
+                Change Format
+              </Button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-foreground">Headline</Label>
+                <Input
+                  value={selectedHeadline}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedHeadline(value);
+                    if (!slug.trim()) setSlug(slugify(value));
+                  }}
+                  placeholder="Select or type the headline"
+                />
+              </div>
+
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-foreground">Article editor</Label>
+                <Textarea
+                  value={articleDraft}
+                  onChange={(e) => setArticleDraft(e.target.value)}
+                  placeholder="Article content here..."
+                  className="min-h-[320px] md:min-h-[420px] resize-y"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-border px-5 py-3 text-sm text-muted-foreground">
+              Word count: {words}
+            </div>
+          </div>
+
+          <div className="space-y-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8.5rem)] xl:overflow-y-auto xl:pr-1">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">1. Headlines</p>
+              <RadioGroup
+                value={selectedHeadline}
+                onValueChange={setSelectedHeadline}
+                className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
+              >
+                {headlineOptions.map((option, index) => {
+                  const optionID = `headline-option-${index}`;
+                  return (
+                    <div key={option} className="flex items-start gap-2 rounded-md border border-border p-2">
+                      <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
+                      <Label
+                        htmlFor={optionID}
+                        className="text-sm leading-snug text-foreground break-words"
+                        style={{
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {option}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </RadioGroup>
+
+              <div className="mt-3 flex items-center gap-2">
+                <Input
+                  value={newHeadline}
+                  onChange={(e) => setNewHeadline(e.target.value)}
+                  placeholder="Add custom headline"
+                  className="flex-1"
+                />
+                <Button variant="outline" size="sm" onClick={addCustomHeadline} className="shrink-0">
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">2. Straplines</p>
+              <RadioGroup
+                value={selectedStrapline}
+                onValueChange={setSelectedStrapline}
+                className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
+              >
+                {straplineOptions.map((option, index) => {
+                  const optionID = `strapline-option-${index}`;
+                  return (
+                    <div key={option} className="flex items-start gap-2 rounded-md border border-border p-2">
+                      <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
+                      <Label
+                        htmlFor={optionID}
+                        className="text-sm leading-snug text-foreground break-words"
+                        style={{
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {option}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </RadioGroup>
+
+              <div className="mt-3 flex items-center gap-2">
+                <Input
+                  value={newStrapline}
+                  onChange={(e) => setNewStrapline(e.target.value)}
+                  placeholder="Add custom strapline"
+                  className="flex-1"
+                />
+                <Button variant="outline" size="sm" onClick={addCustomStrapline} className="shrink-0">
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">3. SEO</p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <Label className="mb-2 block text-xs text-muted-foreground">Slug</Label>
+                  <Input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} />
+                </div>
+                <div>
+                  <Label className="mb-2 block text-xs text-muted-foreground">Meta description</Label>
+                  <Textarea
+                    value={metaDescription}
+                    onChange={(e) => setMetaDescription(e.target.value)}
+                    className="min-h-[90px]"
+                  />
+                </div>
+                <div>
+                  <Label className="mb-2 block text-xs text-muted-foreground">Excerpt</Label>
+                  <Textarea value={excerpt} onChange={(e) => setExcerpt(e.target.value)} className="min-h-[90px]" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">4. Topic</p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <Label className="mb-2 block text-xs text-muted-foreground">Assign topic</Label>
+                  <Select value={category || undefined} onValueChange={setCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoriesQuery.data?.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={customTopic}
+                    onChange={(e) => setCustomTopic(e.target.value)}
+                    placeholder="Create new topic"
+                    className="flex-1"
+                  />
+                  <Button variant="outline" size="sm" onClick={applyCustomTopic} className="shrink-0">
+                    Create
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 z-10 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <Button variant="outline" onClick={() => navigate("/draft-articles")}>
+              Go to Drafts
+            </Button>
+            <Button onClick={saveDraft} disabled={isBusy}>
+              Save Draft
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="animate-fade-in pb-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">New Analysis</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              4-step flow: Input - Facts - Format - Write Article.
+            </p>
+          </div>
+
+          {analysisID && (
+            <Button variant="ghost" size="sm" onClick={backToInput} className="text-muted-foreground">
+              Start new
+            </Button>
+          )}
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {stepItems.map((item) => {
+            const isActive = step === item.id;
+            const isEnabled = canOpenStep(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={!isEnabled}
+                onClick={() => moveToStep(item.id)}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card text-muted-foreground",
+                  isEnabled ? "hover:border-primary/40 hover:text-foreground" : "cursor-not-allowed opacity-60",
+                )}
+              >
+                <span>{item.id}</span>
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {step > 1 && analysisID && analysisQuery.isFetching && (
+          <p className="mt-3 text-xs text-muted-foreground">Syncing latest analysis changes...</p>
         )}
+
+        {step === 1 && renderStep1()}
+        {step === 2 && renderStep2()}
+        {step === 3 && renderStep3()}
+        {step === 4 && renderStep4()}
       </div>
     </DashboardLayout>
   );

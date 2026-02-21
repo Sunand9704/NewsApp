@@ -39,16 +39,24 @@ type AnalysisGap struct {
 }
 
 type AnalysisDetail struct {
-	ID          int64          `json:"id"`
-	Title       string         `json:"title"`
-	Category    string         `json:"category"`
-	Status      string         `json:"status"`
-	SourceURL   string         `json:"sourceUrl"`
-	RawText     string         `json:"rawText"`
-	ArticleText string         `json:"articleText"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	Facts       []AnalysisFact `json:"facts"`
-	Gaps        []AnalysisGap  `json:"gaps"`
+	ID                int64          `json:"id"`
+	Title             string         `json:"title"`
+	Category          string         `json:"category"`
+	Status            string         `json:"status"`
+	SourceURL         string         `json:"sourceUrl"`
+	RawText           string         `json:"rawText"`
+	SelectedFormat    string         `json:"selectedFormat"`
+	ArticleText       string         `json:"articleText"`
+	HeadlineSelected  string         `json:"headlineSelected"`
+	StraplineSelected string         `json:"straplineSelected"`
+	HeadlineOptions   []string       `json:"headlineOptions"`
+	StraplineOptions  []string       `json:"straplineOptions"`
+	Slug              string         `json:"slug"`
+	MetaDescription   string         `json:"metaDescription"`
+	Excerpt           string         `json:"excerpt"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	Facts             []AnalysisFact `json:"facts"`
+	Gaps              []AnalysisGap  `json:"gaps"`
 }
 
 type ModelOption struct {
