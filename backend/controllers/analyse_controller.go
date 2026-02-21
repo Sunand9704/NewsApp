@@ -22,6 +22,7 @@ type analyseRequest struct {
 	URL      string `json:"url"`
 	Content  string `json:"content"`
 	Language string `json:"language"`
+	Category string `json:"category"`
 }
 
 func NewAnalyseController(database *sql.DB) *AnalyseController {
@@ -46,6 +47,7 @@ func (a *AnalyseController) AnalyseArticle(c *gin.Context) {
 
 	urlValue := strings.TrimSpace(req.URL)
 	language := strings.TrimSpace(req.Language)
+	category := strings.TrimSpace(req.Category)
 	if text == "" && urlValue == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "provide either text or url",
@@ -54,16 +56,18 @@ func (a *AnalyseController) AnalyseArticle(c *gin.Context) {
 	}
 
 	log.Printf(
-		"phase-1 incoming request: text=%s url=%s language=%s",
+		"phase-1 incoming request: text=%s url=%s language=%s category=%s",
 		previewForLog(text),
 		previewForLog(urlValue),
 		previewForLog(language),
+		previewForLog(category),
 	)
 
 	result, err := a.factService.RunPhaseOne(c.Request.Context(), models.PhaseOneInput{
 		Text:     text,
 		URL:      urlValue,
 		Language: language,
+		Category: category,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

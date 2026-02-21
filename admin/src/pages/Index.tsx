@@ -9,30 +9,50 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-
-const summaryCards = [
-  { label: "Total Analyses", value: "128", icon: BarChart3, change: "+12 this week" },
-  { label: "Pending Reviews", value: "7", icon: Clock, change: "3 urgent" },
-  { label: "Saved Articles", value: "94", icon: Archive, change: "+5 today" },
-  { label: "AI Usage", value: "68%", icon: Zap, change: "2,140 / 3,000 tokens" },
-];
-
-const recentAnalyses = [
-  { id: 1, title: "Byju's Q3 FY26 Financial Report", date: "2026-02-20", status: "Completed" },
-  { id: 2, title: "ISRO Gaganyaan Mission Update", date: "2026-02-19", status: "Pending" },
-  { id: 3, title: "RBI Monetary Policy Feb 2026", date: "2026-02-18", status: "Completed" },
-  { id: 4, title: "Zomato-Blinkit Merger Analysis", date: "2026-02-17", status: "Draft" },
-  { id: 5, title: "India GDP Q3 Estimates", date: "2026-02-16", status: "Completed" },
-];
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 
 const statusColor: Record<string, string> = {
-  Completed: "bg-success/10 text-success border-success/20",
-  Pending: "bg-warning/10 text-warning border-warning/20",
-  Draft: "bg-muted text-muted-foreground border-border",
+  completed: "bg-success/10 text-success border-success/20",
+  pending: "bg-warning/10 text-warning border-warning/20",
+  draft: "bg-muted text-muted-foreground border-border",
 };
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => api.getDashboard(8),
+  });
+
+  const summaryCards = [
+    {
+      label: "Total Analyses",
+      value: String(data?.summary.totalAnalyses ?? 0),
+      icon: BarChart3,
+      change: "Total records in database",
+    },
+    {
+      label: "Pending Reviews",
+      value: String(data?.summary.pendingReview ?? 0),
+      icon: Clock,
+      change: "Awaiting confirmation",
+    },
+    {
+      label: "Saved Articles",
+      value: String(data?.summary.savedArticles ?? 0),
+      icon: Archive,
+      change: "Completed analyses",
+    },
+    {
+      label: "AI Usage",
+      value: `${data?.summary.aiUsagePct ?? 0}%`,
+      icon: Zap,
+      change: data?.summary.aiUsageText ?? "0 included / 0 total facts",
+    },
+  ];
+
+  const recentAnalyses = data?.recentAnalyses ?? [];
 
   return (
     <DashboardLayout>
@@ -69,7 +89,7 @@ const Dashboard = () => {
           </div>
 
           <div className="mt-4 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-            <table className="w-full">
+            <table className="w-full min-w-[700px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
@@ -79,25 +99,64 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentAnalyses.map((item, idx) => (
-                  <tr
-                    key={item.id}
-                    className={`transition-colors hover:bg-muted/30 ${idx !== recentAnalyses.length - 1 ? "border-b border-border" : ""}`}
-                  >
-                    <td className="px-5 py-3.5 text-sm font-medium text-foreground">{item.title}</td>
-                    <td className="px-5 py-3.5 text-sm text-muted-foreground">{item.date}</td>
-                    <td className="px-5 py-3.5">
-                      <Badge variant="outline" className={`text-xs ${statusColor[item.status]}`}>
-                        {item.status}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
+                {isLoading && (
+                  <tr>
+                    <td className="px-5 py-6 text-sm text-muted-foreground" colSpan={4}>
+                      Loading dashboard data...
                     </td>
                   </tr>
-                ))}
+                )}
+
+                {!isLoading && error && (
+                  <tr>
+                    <td className="px-5 py-6 text-sm text-destructive" colSpan={4}>
+                      Failed to load dashboard data.{" "}
+                      <button onClick={() => refetch()} className="underline">
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
+                )}
+
+                {!isLoading && !error && recentAnalyses.length === 0 && (
+                  <tr>
+                    <td className="px-5 py-6 text-sm text-muted-foreground" colSpan={4}>
+                      No analyses found in the database.
+                    </td>
+                  </tr>
+                )}
+
+                {!isLoading &&
+                  !error &&
+                  recentAnalyses.map((item, idx) => {
+                    const statusKey = item.status.toLowerCase();
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`transition-colors hover:bg-muted/30 ${idx !== recentAnalyses.length - 1 ? "border-b border-border" : ""}`}
+                      >
+                        <td className="px-5 py-3.5 text-sm font-medium text-foreground">{item.title}</td>
+                        <td className="px-5 py-3.5 text-sm text-muted-foreground">
+                          {new Date(item.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <Badge variant="outline" className={`text-xs ${statusColor[statusKey] ?? statusColor.draft}`}>
+                            {item.status}
+                          </Badge>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => navigate(`/saved/${item.id}`)}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>

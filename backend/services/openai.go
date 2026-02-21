@@ -19,6 +19,8 @@ import (
 const (
 	defaultGroqModel   = "llama-3.3-70b-versatile"
 	defaultGroqBaseURL = "https://api.groq.com/openai/v1"
+	defaultOpenAIModel = "gpt-4o-mini"
+	defaultOpenAIURL   = "https://api.openai.com/v1"
 )
 
 type OpenAIService struct {
@@ -92,6 +94,40 @@ func NewOpenAIService() *OpenAIService {
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+	}
+}
+
+func (s *OpenAIService) ApplySettings(provider string, model string) {
+	cleanProvider := strings.ToLower(strings.TrimSpace(provider))
+	cleanModel := strings.TrimSpace(model)
+
+	if cleanModel != "" {
+		s.model = cleanModel
+	}
+
+	switch cleanProvider {
+	case "openai":
+		apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+		baseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+		if baseURL == "" {
+			baseURL = defaultOpenAIURL
+		}
+		if s.model == "" {
+			s.model = defaultOpenAIModel
+		}
+		s.apiKey = apiKey
+		s.baseURL = strings.TrimRight(baseURL, "/")
+	default:
+		apiKey := firstNonEmptyEnv("GROQ_API_KEY", "OPENAI_API_KEY")
+		baseURL := firstNonEmptyEnv("GROQ_BASE_URL", "OPENAI_BASE_URL")
+		if baseURL == "" {
+			baseURL = defaultGroqBaseURL
+		}
+		if s.model == "" {
+			s.model = defaultGroqModel
+		}
+		s.apiKey = apiKey
+		s.baseURL = strings.TrimRight(baseURL, "/")
 	}
 }
 
