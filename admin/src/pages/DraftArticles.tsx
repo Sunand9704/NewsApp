@@ -5,6 +5,15 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { FilePenLine } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 
 const DraftArticles = () => {
   const navigate = useNavigate();
@@ -20,78 +29,79 @@ const DraftArticles = () => {
 
   return (
     <DashboardLayout>
-      <div className="animate-fade-in">
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">Draft Articles</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Simple draft list. Click edit to open the write + metadata step.
-        </p>
-
-        <div className="mt-6 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-          <table className="w-full min-w-[760px]">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Headline</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Topic</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Edit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listQuery.isLoading && (
-                <tr>
-                  <td className="px-5 py-6 text-sm text-muted-foreground" colSpan={4}>
-                    Loading drafts...
-                  </td>
-                </tr>
-              )}
-
-              {!listQuery.isLoading && listQuery.error && (
-                <tr>
-                  <td className="px-5 py-6 text-sm text-destructive" colSpan={4}>
-                    Failed to load drafts.{" "}
-                    <button onClick={() => listQuery.refetch()} className="underline">
-                      Retry
-                    </button>
-                  </td>
-                </tr>
-              )}
-
-              {!listQuery.isLoading && !listQuery.error && drafts.length === 0 && (
-                <tr>
-                  <td className="px-5 py-6 text-sm text-muted-foreground" colSpan={4}>
-                    No draft articles yet.
-                  </td>
-                </tr>
-              )}
-
-              {!listQuery.isLoading &&
-                !listQuery.error &&
-                drafts.map((item, idx) => (
-                  <tr
-                    key={item.id}
-                    className={`transition-colors hover:bg-muted/30 ${idx !== drafts.length - 1 ? "border-b border-border" : ""}`}
-                  >
-                    <td className="px-5 py-3.5 text-sm font-medium text-foreground">{item.title}</td>
-                    <td className="px-5 py-3.5 text-sm text-muted-foreground">{item.category}</td>
-                    <td className="px-5 py-3.5 text-sm text-muted-foreground">
-                      {new Date(item.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/new-analysis/${item.id}?step=4`)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <FilePenLine className="mr-1.5 h-3.5 w-3.5" />
-                        Edit
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+      <div className="animate-fade-in space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Draft Articles</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Simple draft list. Click edit to open the write + metadata step.
+          </p>
         </div>
+
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[45%]">Headline</TableHead>
+                  <TableHead>Topic</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {listQuery.isLoading && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center">
+                      Loading drafts...
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!listQuery.isLoading && listQuery.error && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-destructive">
+                      Failed to load drafts.{" "}
+                      <button onClick={() => listQuery.refetch()} className="underline font-medium">
+                        Retry
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!listQuery.isLoading && !listQuery.error && drafts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                      No draft articles yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!listQuery.isLoading &&
+                  !listQuery.error &&
+                  drafts.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.title}</TableCell>
+                      <TableCell className="text-muted-foreground">{item.category}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(item.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/new-analysis/${item.id}?step=4`)}
+                          className="h-8 px-2 lg:px-3"
+                        >
+                          <FilePenLine className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );

@@ -3,6 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { BarChart3, FileClock, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const Dashboard = () => {
   const { data, isLoading, error, refetch } = useQuery({
@@ -48,36 +55,50 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div className="animate-fade-in">
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Quick summary cards. No heavy logic.</p>
+      <div className="animate-fade-in space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Quick summary cards. No heavy logic.</p>
+        </div>
 
         {isLoading && (
-          <div className="mt-6 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
-            Loading dashboard...
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Loading dashboard...</p>
+            </CardContent>
+          </Card>
         )}
 
         {!isLoading && error && (
-          <div className="mt-6 rounded-xl border border-destructive/40 bg-card p-5 text-sm text-destructive shadow-sm">
-            Failed to load dashboard.{" "}
-            <button onClick={() => refetch()} className="underline">
-              Retry
-            </button>
-          </div>
+          <Card className="border-destructive/40">
+            <CardContent className="pt-6">
+              <p className="text-sm text-destructive">
+                Failed to load dashboard.{" "}
+                <button onClick={() => refetch()} className="underline">
+                  Retry
+                </button>
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         {!isLoading && !error && (
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {cards.map((card) => (
-              <div key={card.title} className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">{card.title}</span>
+              <Card key={card.title}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {card.title}
+                  </CardTitle>
                   <card.icon className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <p className="mt-2 text-3xl font-semibold text-foreground">{card.value}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{card.detail}</p>
-              </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{card.value}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {card.detail}
+                  </p>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
