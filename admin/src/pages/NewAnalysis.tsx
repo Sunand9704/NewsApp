@@ -29,6 +29,15 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 type OutputLanguage = "English" | "Telugu";
 type Step = 1 | 2 | 3 | 4;
@@ -527,10 +536,12 @@ const NewAnalysis = () => {
 
   const renderStep1 = () => (
     <div className="mx-auto mt-6 max-w-3xl space-y-4">
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <label className="text-sm font-medium text-foreground">Paste article URL</label>
-        <div className="mt-2 flex gap-3">
-          <div className="relative flex-1">
+      <Card shadow-sm>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Paste article URL</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={url}
@@ -539,24 +550,28 @@ const NewAnalysis = () => {
               className="pl-9"
             />
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-border" />
+        <Separator className="flex-1" />
         <span className="text-xs font-medium text-muted-foreground">OR</span>
-        <div className="h-px flex-1 bg-border" />
+        <Separator className="flex-1" />
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <label className="text-sm font-medium text-foreground">Paste article text</label>
-        <Textarea
-          value={articleText}
-          onChange={(e) => setArticleText(e.target.value)}
-          placeholder="Paste the full article text here"
-          className="mt-2 min-h-[180px] resize-none"
-        />
-      </div>
+      <Card shadow-sm>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Paste article text</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            value={articleText}
+            onChange={(e) => setArticleText(e.target.value)}
+            placeholder="Paste the full article text here"
+            className="min-h-[180px] resize-none"
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
         <div>
@@ -601,149 +616,165 @@ const NewAnalysis = () => {
 
     if (analysisQuery.isLoading) {
       return (
-        <div className="mt-6 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
-          Loading facts and gaps...
-        </div>
+        <Card className="mt-6">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Loading facts and gaps...</p>
+          </CardContent>
+        </Card>
       );
     }
 
     if (analysisQuery.error) {
       return (
-        <div className="mt-6 rounded-xl border border-destructive/40 bg-card p-5 text-sm text-destructive shadow-sm">
-          Failed to load analysis data.
-        </div>
+        <Card className="mt-6 border-destructive/40">
+          <CardContent className="pt-6">
+            <p className="text-sm text-destructive">Failed to load analysis data.</p>
+          </CardContent>
+        </Card>
       );
     }
 
     return (
       <div className="mt-6 space-y-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <div className="rounded-xl border border-border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <Card shadow-sm>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-5 py-4">
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-semibold text-foreground">Confirmed Facts</h3>
+                <CardTitle className="text-sm font-semibold">Confirmed Facts</CardTitle>
               </div>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground font-normal">
                 {includedFactsCount}/{facts.length} selected
               </span>
-            </div>
+            </CardHeader>
+            <Separator />
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {facts.length === 0 && (
+                  <div className="px-5 py-4 text-sm text-muted-foreground text-center">No facts generated.</div>
+                )}
 
-            <div className="divide-y divide-border">
-              {facts.length === 0 && (
-                <div className="px-5 py-4 text-sm text-muted-foreground">No facts generated.</div>
-              )}
-
-              {facts.map((fact) => (
-                <div key={fact.id} className="flex items-start gap-3 px-5 py-3 hover:bg-muted/30">
-                  <Checkbox
-                    checked={fact.included}
-                    onCheckedChange={() => toggleFact(fact.id, fact.included)}
-                    className="mt-1"
-                  />
-
-                  {editingID === fact.id ? (
-                    <Input
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      onBlur={() => saveEdit(fact.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") saveEdit(fact.id);
-                      }}
-                      className="h-8 flex-1 text-sm"
-                      autoFocus
+                {facts.map((fact) => (
+                  <div key={fact.id} className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30">
+                    <Checkbox
+                      checked={fact.included}
+                      onCheckedChange={() => toggleFact(fact.id, fact.included)}
+                      className="mt-1"
                     />
-                  ) : (
-                    <span
-                      className={cn(
-                        "flex-1 text-sm",
-                        fact.included ? "text-foreground" : "text-muted-foreground line-through",
-                      )}
-                    >
-                      {fact.text}
-                    </span>
-                  )}
 
-                  {editingID !== fact.id && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => startEdit(fact)}
-                        className="text-muted-foreground transition-colors hover:text-foreground"
+                    {editingID === fact.id ? (
+                      <Input
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        onBlur={() => saveEdit(fact.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(fact.id);
+                        }}
+                        className="h-8 flex-1 text-sm"
+                        autoFocus
+                      />
+                    ) : (
+                      <span
+                        className={cn(
+                          "flex-1 text-sm leading-normal",
+                          fact.included ? "text-foreground" : "text-muted-foreground line-through opacity-70",
+                        )}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => deleteFact(fact.id)}
-                        className="text-muted-foreground transition-colors hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                        {fact.text}
+                      </span>
+                    )}
 
-            <div className="border-t border-border px-5 py-3">
-              <Button variant="ghost" size="sm" onClick={addFact} className="text-primary">
+                    {editingID !== fact.id && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => startEdit(fact)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteFact(fact.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <Separator />
+            <CardFooter className="px-5 py-3">
+              <Button variant="ghost" size="sm" onClick={addFact} className="text-primary hover:text-primary hover:bg-primary/5">
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 Add fact
               </Button>
-            </div>
-          </div>
+            </CardFooter>
+          </Card>
 
-          <div className="rounded-xl border border-border bg-card shadow-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <Card shadow-sm>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-5 py-4">
               <div className="flex items-center gap-2">
                 <Lightbulb className="h-4 w-4 text-warning" />
-                <h3 className="text-sm font-semibold text-foreground">Missing / Gaps</h3>
+                <CardTitle className="text-sm font-semibold">Missing / Gaps</CardTitle>
               </div>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground font-normal">
                 {gaps.filter((gap) => gap.selected).length}/{gaps.length} selected
               </span>
-            </div>
+            </CardHeader>
+            <Separator />
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {gaps.length === 0 && (
+                  <div className="px-5 py-4 text-sm text-muted-foreground text-center">No gap suggestions generated.</div>
+                )}
 
-            <div className="divide-y divide-border">
-              {gaps.length === 0 && (
-                <div className="px-5 py-4 text-sm text-muted-foreground">No gap suggestions generated.</div>
-              )}
-
-              {gaps.map((gap) => (
-                <div key={gap.id} className="flex items-start gap-3 px-5 py-3 hover:bg-muted/30">
-                  <Checkbox
-                    checked={gap.selected}
-                    onCheckedChange={() => toggleGap(gap.id, gap.selected)}
-                    className="mt-1"
-                  />
-                  <span className="flex-1 text-sm text-foreground">{gap.text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+                {gaps.map((gap) => (
+                  <div key={gap.id} className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30">
+                    <Checkbox
+                      checked={gap.selected}
+                      onCheckedChange={() => toggleGap(gap.id, gap.selected)}
+                      className="mt-1"
+                    />
+                    <span className="flex-1 text-sm leading-normal text-foreground">{gap.text}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-          <Button variant="outline" className="gap-2" onClick={rerunAI} disabled={isBusy}>
-            <RotateCcw className="h-4 w-4" />
-            Re-run AI
-          </Button>
-          <Button onClick={confirmFacts} disabled={isBusy || includedFactsCount === 0}>
-            Confirm Facts
-            <ArrowRight className="ml-1.5 h-4 w-4" />
-          </Button>
-        </div>
+        <Card className="sticky bottom-0 z-10 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+          <CardContent className="flex flex-wrap items-center justify-end gap-3 px-5 py-4">
+            <Button variant="outline" className="gap-2" onClick={rerunAI} disabled={isBusy}>
+              <RotateCcw className="h-4 w-4" />
+              Re-run AI analysis
+            </Button>
+            <Button onClick={confirmFacts} disabled={isBusy || includedFactsCount === 0} className="px-8">
+              Confirm & Continue
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   };
 
   const renderStep3 = () => (
-    <div className="mt-6 space-y-5">
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h3 className="text-base font-semibold text-foreground">Choose format for this story</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Select one of the 3 formats to continue to writing.
-        </p>
-      </div>
+    <div className="mt-6 space-y-6">
+      <Card shadow-sm>
+        <CardHeader>
+          <CardTitle>Article Format</CardTitle>
+          <CardDescription>
+            Choose the best presentation style for this story.
+          </CardDescription>
+        </CardHeader>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {FORMAT_OPTIONS.map((option) => {
@@ -754,26 +785,28 @@ const NewAnalysis = () => {
               type="button"
               onClick={() => setSelectedFormat(option.value)}
               className={cn(
-                "rounded-xl border bg-card p-5 text-left shadow-sm transition-colors",
+                "rounded-xl border bg-card p-5 text-left shadow-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary",
                 active ? "border-primary ring-1 ring-primary" : "border-border hover:border-primary/40",
               )}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{option.label}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+                <div className="space-y-1">
+                  <p className="font-semibold text-foreground">{option.label}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{option.description}</p>
                 </div>
-                <span className="text-sm font-semibold text-foreground">{option.confidence}%</span>
+                <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted/50 text-[10px] font-bold text-muted-foreground">
+                  {option.confidence}%
+                </div>
               </div>
 
-              <div className="mt-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <div className="mt-5 rounded-md border border-border bg-muted/30 px-3 py-2.5 text-[11px] leading-snug text-muted-foreground font-mono">
                 {option.preview}
               </div>
 
               {active && (
-                <div className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
-                  <Check className="h-3.5 w-3.5" />
-                  Selected
+                <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
+                  <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  Currently Selected
                 </div>
               )}
             </button>
@@ -781,15 +814,18 @@ const NewAnalysis = () => {
         })}
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-        <Button variant="outline" onClick={() => moveToStep(2)}>
-          Back to Facts
-        </Button>
-        <Button onClick={continueToWriter} disabled={!selectedFormat || isBusy}>
-          Write Article
-          <ArrowRight className="ml-1.5 h-4 w-4" />
-        </Button>
-      </div>
+      <Card className="sticky bottom-0 z-10 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+        <CardContent className="flex items-center justify-between gap-3 px-5 py-4">
+          <Button variant="outline" onClick={() => moveToStep(2)}>
+            <ArrowRight className="mr-2 h-4 w-4 rotate-180" />
+            Back to Facts
+          </Button>
+          <Button onClick={continueToWriter} disabled={!selectedFormat || isBusy} className="px-8">
+            Start Writing
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 
@@ -799,165 +835,175 @@ const NewAnalysis = () => {
     const words = articleDraft.trim() ? articleDraft.trim().split(/\s+/).length : 0;
 
     return (
-      <div className="mt-6 space-y-5">
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(340px,1fr)]">
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
+      <div className="mt-6 space-y-6">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(340px,1fr)]">
+          <Card className="shadow-sm overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 border-b bg-muted/5 py-4">
               <div>
-                <p className="text-sm font-medium text-foreground">
+                <CardTitle className="text-sm font-medium">Article Draft</CardTitle>
+                <CardDescription className="text-xs">
                   Format: {FORMAT_OPTIONS.find((item) => item.value === selectedFormat)?.label}
-                </p>
+                </CardDescription>
               </div>
-              <Button variant="outline" size="sm" onClick={() => moveToStep(3)}>
+              <Button variant="outline" size="sm" onClick={() => moveToStep(3)} className="h-8">
                 Change Format
               </Button>
-            </div>
-
-            <div className="space-y-4 px-5 py-4">
-              <div>
-                <Label className="mb-2 block text-sm font-medium text-foreground">Headline</Label>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              <div className="space-y-2">
+                <Label htmlFor="article-headline" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Headline</Label>
                 <Input
+                  id="article-headline"
                   value={selectedHeadline}
                   onChange={(e) => {
                     const value = e.target.value;
                     setSelectedHeadline(value);
                     if (!slug.trim()) setSlug(slugify(value));
                   }}
-                  placeholder="Select or type the headline"
+                  placeholder="Primary headline for the article"
+                  className="text-lg font-semibold h-11"
                 />
               </div>
 
-              <div>
-                <Label className="mb-2 block text-sm font-medium text-foreground">Article editor</Label>
+              <div className="space-y-2">
+                <Label htmlFor="article-editor" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Content Editor</Label>
                 <Textarea
+                  id="article-editor"
                   value={articleDraft}
                   onChange={(e) => setArticleDraft(e.target.value)}
-                  placeholder="Article content here..."
-                  className="min-h-[320px] md:min-h-[420px] resize-y"
+                  placeholder="Draft your story here..."
+                  className="min-h-[450px] md:min-h-[550px] resize-y leading-relaxed"
                 />
               </div>
-            </div>
+            </CardContent>
+            <Separator />
+            <CardFooter className="bg-muted/5 py-3">
+              <span className="text-xs font-medium text-muted-foreground">
+                Word count: <span className="text-foreground">{words}</span> words
+              </span>
+            </CardFooter>
+          </Card>
 
-            <div className="border-t border-border px-5 py-3 text-sm text-muted-foreground">
-              Word count: {words}
-            </div>
-          </div>
+          <div className="space-y-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8.5rem)] xl:overflow-y-auto xl:pr-1">
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold">1. Headlines</CardTitle>
+                <CardDescription className="text-xs">AI suggested options</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RadioGroup
+                  value={selectedHeadline}
+                  onValueChange={setSelectedHeadline}
+                  className="space-y-2"
+                >
+                  {headlineOptions.map((option, index) => {
+                    const optionID = `headline-option-${index}`;
+                    return (
+                      <div key={option} className="flex items-start gap-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                        <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
+                        <Label
+                          htmlFor={optionID}
+                          className="text-xs leading-normal font-medium cursor-pointer"
+                        >
+                          {option}
+                        </Label>
+                      </div>
+                    );
+                  })}
+                </RadioGroup>
 
-          <div className="space-y-4 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8.5rem)] xl:overflow-y-auto xl:pr-1">
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <p className="text-sm font-semibold text-foreground">1. Headlines</p>
-              <RadioGroup
-                value={selectedHeadline}
-                onValueChange={setSelectedHeadline}
-                className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
-              >
-                {headlineOptions.map((option, index) => {
-                  const optionID = `headline-option-${index}`;
-                  return (
-                    <div key={option} className="flex items-start gap-2 rounded-md border border-border p-2">
-                      <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
-                      <Label
-                        htmlFor={optionID}
-                        className="text-sm leading-snug text-foreground break-words"
-                        style={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 3,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {option}
-                      </Label>
-                    </div>
-                  );
-                })}
-              </RadioGroup>
-
-              <div className="mt-3 flex items-center gap-2">
-                <Input
-                  value={newHeadline}
-                  onChange={(e) => setNewHeadline(e.target.value)}
-                  placeholder="Add custom headline"
-                  className="flex-1"
-                />
-                <Button variant="outline" size="sm" onClick={addCustomHeadline} className="shrink-0">
-                  Add
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <p className="text-sm font-semibold text-foreground">2. Straplines</p>
-              <RadioGroup
-                value={selectedStrapline}
-                onValueChange={setSelectedStrapline}
-                className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
-              >
-                {straplineOptions.map((option, index) => {
-                  const optionID = `strapline-option-${index}`;
-                  return (
-                    <div key={option} className="flex items-start gap-2 rounded-md border border-border p-2">
-                      <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
-                      <Label
-                        htmlFor={optionID}
-                        className="text-sm leading-snug text-foreground break-words"
-                        style={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 3,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {option}
-                      </Label>
-                    </div>
-                  );
-                })}
-              </RadioGroup>
-
-              <div className="mt-3 flex items-center gap-2">
-                <Input
-                  value={newStrapline}
-                  onChange={(e) => setNewStrapline(e.target.value)}
-                  placeholder="Add custom strapline"
-                  className="flex-1"
-                />
-                <Button variant="outline" size="sm" onClick={addCustomStrapline} className="shrink-0">
-                  Add
-                </Button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <p className="text-sm font-semibold text-foreground">3. SEO</p>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">Slug</Label>
-                  <Input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} />
+                <div className="mt-4 flex items-center gap-2">
+                  <Input
+                    value={newHeadline}
+                    onChange={(e) => setNewHeadline(e.target.value)}
+                    placeholder="New custom headline..."
+                    className="h-9 text-xs"
+                  />
+                  <Button variant="secondary" size="sm" onClick={addCustomHeadline} className="h-9">
+                    Add
+                  </Button>
                 </div>
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">Meta description</Label>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold">2. Straplines</CardTitle>
+                <CardDescription className="text-xs">Secondary headlines</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RadioGroup
+                  value={selectedStrapline}
+                  onValueChange={setSelectedStrapline}
+                  className="space-y-2"
+                >
+                  {straplineOptions.map((option, index) => {
+                    const optionID = `strapline-option-${index}`;
+                    return (
+                      <div key={option} className="flex items-start gap-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                        <RadioGroupItem value={option} id={optionID} className="mt-0.5" />
+                        <Label
+                          htmlFor={optionID}
+                          className="text-xs leading-normal font-medium cursor-pointer"
+                        >
+                          {option}
+                        </Label>
+                      </div>
+                    );
+                  })}
+                </RadioGroup>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <Input
+                    value={newStrapline}
+                    onChange={(e) => setNewStrapline(e.target.value)}
+                    placeholder="New custom strapline..."
+                    className="h-9 text-xs"
+                  />
+                  <Button variant="secondary" size="sm" onClick={addCustomStrapline} className="h-9">
+                    Add
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold">3. SEO Metadata</CardTitle>
+                <CardDescription className="text-xs">Search engine settings</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">URL Slug</Label>
+                  <Input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} className="h-9" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Meta Description</Label>
                   <Textarea
                     value={metaDescription}
                     onChange={(e) => setMetaDescription(e.target.value)}
-                    className="min-h-[90px]"
+                    className="min-h-[80px] text-xs resize-none"
+                    placeholder="Brief summary for search results"
                   />
                 </div>
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">Excerpt</Label>
-                  <Textarea value={excerpt} onChange={(e) => setExcerpt(e.target.value)} className="min-h-[90px]" />
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Excerpt</Label>
+                  <Textarea value={excerpt} onChange={(e) => setExcerpt(e.target.value)} className="min-h-[80px] text-xs resize-none" placeholder="Summary for article listings" />
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <p className="text-sm font-semibold text-foreground">4. Topic</p>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">Assign topic</Label>
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold">4. Classification</CardTitle>
+                <CardDescription className="text-xs">Category management</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assign Category</Label>
                   <Select value={category || undefined} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Select classification" />
                     </SelectTrigger>
                     <SelectContent>
                       {categoriesQuery.data?.map((item) => (
@@ -969,32 +1015,32 @@ const NewAnalysis = () => {
                   </Select>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-2 border-t mt-2">
                   <Input
                     value={customTopic}
                     onChange={(e) => setCustomTopic(e.target.value)}
-                    placeholder="Create new topic"
-                    className="flex-1"
+                    placeholder="Override topic name"
+                    className="h-9 text-xs"
                   />
-                  <Button variant="outline" size="sm" onClick={applyCustomTopic} className="shrink-0">
-                    Create
+                  <Button variant="outline" size="sm" onClick={applyCustomTopic} className="h-9">
+                    Apply
                   </Button>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
-        <div className="sticky bottom-0 z-10 rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-end gap-3">
+        <Card className="sticky bottom-0 z-20 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+          <CardContent className="flex flex-wrap items-center justify-end gap-3 px-5 py-4">
             <Button variant="outline" onClick={() => navigate("/draft-articles")}>
               Go to Drafts
             </Button>
-            <Button onClick={saveDraft} disabled={isBusy}>
-              Save Draft
+            <Button onClick={saveDraft} disabled={isBusy} className="px-10">
+              Save changes
             </Button>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     );
   };

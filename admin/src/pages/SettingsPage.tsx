@@ -12,6 +12,14 @@ import { CheckCircle2, Save } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 
 const SettingsPage = () => {
   const queryClient = useQueryClient();
@@ -64,87 +72,109 @@ const SettingsPage = () => {
 
   return (
     <DashboardLayout>
-      <div className="animate-fade-in">
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Configure your AI provider and model preferences.
-        </p>
+      <div className="animate-fade-in space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure your AI provider and model preferences.
+          </p>
+        </div>
 
-        <div className="mt-6 max-w-lg space-y-6">
+        <div className="max-w-2xl space-y-6">
           {settingsQuery.isLoading && (
-            <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm">
-              Loading settings...
-            </div>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Loading settings...</p>
+              </CardContent>
+            </Card>
           )}
 
           {!settingsQuery.isLoading && settingsQuery.error && (
-            <div className="rounded-xl border border-destructive/30 bg-card p-5 text-sm text-destructive shadow-sm">
-              Failed to load settings.{" "}
-              <button onClick={() => settingsQuery.refetch()} className="underline">
-                Retry
-              </button>
-            </div>
+            <Card className="border-destructive/30">
+              <CardContent className="pt-6">
+                <p className="text-sm text-destructive">
+                  Failed to load settings.{" "}
+                  <button onClick={() => settingsQuery.refetch()} className="underline font-medium">
+                    Retry
+                  </button>
+                </p>
+              </CardContent>
+            </Card>
           )}
 
           {!settingsQuery.isLoading && !settingsQuery.error && settingsQuery.data && (
             <>
-              <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground">AI Provider</label>
-                  <Select value={provider || undefined} onValueChange={handleProviderChange}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {settingsQuery.data.providers.map((item) => (
-                        <SelectItem key={item.key} value={item.key}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">AI Configuration</CardTitle>
+                  <CardDescription>
+                    Select the preferred AI engine for content generation.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="provider">AI Provider</Label>
+                    <Select value={provider || undefined} onValueChange={handleProviderChange}>
+                      <SelectTrigger id="provider">
+                        <SelectValue placeholder="Select provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {settingsQuery.data.providers.map((item) => (
+                          <SelectItem key={item.key} value={item.key}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div>
-                  <label className="text-sm font-medium text-foreground">Model</label>
-                  <Select value={model || undefined} onValueChange={setModel}>
-                    <SelectTrigger className="mt-2">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedProvider?.models.map((item) => (
-                        <SelectItem key={item.key} value={item.key}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="model">Model</Label>
+                    <Select value={model || undefined} onValueChange={setModel}>
+                      <SelectTrigger id="model">
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedProvider?.models.map((item) => (
+                          <SelectItem key={item.key} value={item.key}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">System Status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-success">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span className="text-sm font-medium">
+                      Active: {provider || "N/A"} / {model || "N/A"}
+                    </span>
+                  </div>
+                  {settingsQuery.data.updatedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Last synchronized: {new Date(settingsQuery.data.updatedAt).toLocaleString()}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => saveMutation.mutate()}
+                  className="gap-2 px-8"
+                  disabled={saveMutation.isPending || !provider || !model}
+                >
+                  <Save className="h-4 w-4" />
+                  {saveMutation.isPending ? "Saving..." : "Save Settings"}
+                </Button>
               </div>
-
-              <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                <label className="text-sm font-medium text-foreground">API Connection Status</label>
-                <div className="mt-3 flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                  <span className="text-sm text-success">
-                    Active configuration: {provider || "N/A"} / {model || "N/A"}
-                  </span>
-                </div>
-                {settingsQuery.data.updatedAt && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Last saved: {new Date(settingsQuery.data.updatedAt).toLocaleString()}
-                  </p>
-                )}
-              </div>
-
-              <Button
-                onClick={() => saveMutation.mutate()}
-                className="gap-2"
-                disabled={saveMutation.isPending || !provider || !model}
-              >
-                <Save className="h-4 w-4" />
-                {saveMutation.isPending ? "Saving..." : "Save Settings"}
-              </Button>
             </>
           )}
         </div>
